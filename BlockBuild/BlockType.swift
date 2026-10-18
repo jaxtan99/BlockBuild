@@ -31,11 +31,11 @@ enum BlockType: Int, CaseIterable, Identifiable, Codable {
         case .sand: return "Sand"
         case .glass: return "Glass"
         case .door: return "Door"
-        case .roof: return "Roof"
+        case .roof: return "EdgeRoof"
         case .grass: return "Grass"
         case .dirt: return "Dirt"
         case .slab: return "Slab"
-        case .roofCorner: return "Corner Roof"
+        case .roofCorner: return "SideRoof"
         }
     }
 
@@ -50,11 +50,11 @@ enum BlockType: Int, CaseIterable, Identifiable, Codable {
         case .sand: return "Sand"
         case .glass: return "Glass"
         case .door: return "Door"
-        case .roof: return "Roof"
+        case .roof: return "EdgeRoof"
         case .grass: return "Grass"
         case .dirt: return "Dirt"
         case .slab: return "Slab"
-        case .roofCorner: return "Corner Roof"
+        case .roofCorner: return "SideRoof"
         }
     }
 

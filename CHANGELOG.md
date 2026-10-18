@@ -10,6 +10,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [1.4.2] - 2026-10-18
+
+### Added
+- **Generated House SideRoof Corners**: Procedural wooden cabins now automatically generate with `SideRoof` corner blocks at all 4 roof corners of each tier, seamlessly joining orthogonal roof slopes towards the central peak.
+
+### Changed
+- **Roof Block Renaming**: Renamed the regular stair roof block to **"EdgeRoof"** (no space) and the corner roof block to **"SideRoof"** (no space) across all inventory, hotbar, and display labels.
+- **World Loading Orientations**: Ensured saved worlds and chunk decoders restore orientations for `SideRoof` (`.roofCorner`) alongside `EdgeRoof` (`.roof`).
+
+---
+
 ## [1.4.1] - 2026-10-18
 
 ### Added

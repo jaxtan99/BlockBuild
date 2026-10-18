@@ -1455,26 +1455,54 @@ final class VoxelWorld: NSObject, ObservableObject {
                         }
                     }
 
-                    // Complete pitched roof using the Roof block and top Slab block
+                    // Complete pitched roof using EdgeRoof and SideRoof (corner) blocks, and top Slab block
                     for dx in -2...2 {
                         for dz in -2...2 {
                             let c = BlockCoord(x: midX + dx, y: baseH + 4, z: midZ + dz)
-                            localBlocks[c] = .roof
-                            if abs(dz) >= abs(dx) {
-                                blockOrientations[c] = (dz < 0) ? 2 : 0
+                            let isCorner = (abs(dx) == 2 && abs(dz) == 2)
+                            if isCorner {
+                                localBlocks[c] = .roofCorner
+                                if dx < 0 && dz < 0 {
+                                    blockOrientations[c] = 1
+                                } else if dx > 0 && dz < 0 {
+                                    blockOrientations[c] = 2
+                                } else if dx > 0 && dz > 0 {
+                                    blockOrientations[c] = 3
+                                } else {
+                                    blockOrientations[c] = 0
+                                }
                             } else {
-                                blockOrientations[c] = (dx < 0) ? 1 : 3
+                                localBlocks[c] = .roof
+                                if abs(dz) >= abs(dx) {
+                                    blockOrientations[c] = (dz < 0) ? 2 : 0
+                                } else {
+                                    blockOrientations[c] = (dx < 0) ? 1 : 3
+                                }
                             }
                         }
                     }
                     for dx in -1...1 {
                         for dz in -1...1 {
                             let c = BlockCoord(x: midX + dx, y: baseH + 5, z: midZ + dz)
-                            localBlocks[c] = .roof
-                            if abs(dz) >= abs(dx) {
-                                blockOrientations[c] = (dz < 0) ? 2 : 0
+                            let isCorner = (abs(dx) == 1 && abs(dz) == 1)
+                            if isCorner {
+                                localBlocks[c] = .roofCorner
+                                if dx < 0 && dz < 0 {
+                                    blockOrientations[c] = 1
+                                } else if dx > 0 && dz < 0 {
+                                    blockOrientations[c] = 2
+                                } else if dx > 0 && dz > 0 {
+                                    blockOrientations[c] = 3
+                                } else {
+                                    blockOrientations[c] = 0
+                                }
                             } else {
-                                blockOrientations[c] = (dx < 0) ? 1 : 3
+                                localBlocks[c] = .roof
+                                if abs(dz) >= abs(dx) {
+                                    blockOrientations[c] = (dz < 0) ? 2 : 0
+                                } else {
+                                    blockOrientations[c] = (dx < 0) ? 1 : 3
+                                }
                             }
                         }
                     }
@@ -2127,7 +2155,7 @@ final class VoxelWorld: NSObject, ObservableObject {
                         if isOpen {
                             openToggleBlocks.insert(coord)
                         }
-                        if bType == .roof {
+                        if bType == .roof || bType == .roofCorner {
                             blockOrientations[coord] = dir
                         }
                     }
