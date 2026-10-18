@@ -960,17 +960,18 @@ struct SavedWorldsSheet: View {
     @ObservedObject var world: VoxelWorld
     @Environment(\.dismiss) private var dismiss
     @State private var worldNameInput: String = ""
+    @State private var selectedWorldType: WorldType = .standard
 
     var body: some View {
         NavigationStack {
             List {
-                Section("Current Active 500x500 World (Auto-Saved)") {
+                Section("Current Active World (Auto-Saved)") {
                     VStack(alignment: .leading, spacing: 10) {
                         HStack {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(world.currentWorldName)
                                     .font(.system(size: 16, weight: .bold, design: .monospaced))
-                                Text("\(world.currentArchetype.title) • Seed #\(world.worldSeed)")
+                                Text("\(world.currentWorldType.displayName) • Seed #\(world.worldSeed)")
                                     .font(.system(size: 11, design: .monospaced))
                                     .foregroundColor(.secondary)
                             }
@@ -993,25 +994,87 @@ struct SavedWorldsSheet: View {
                     .padding(.vertical, 4)
                 }
 
-                Section("Create New 500x500 World") {
-                    Button {
-                        world.regenerateNewWorld(customName: worldNameInput)
-                        dismiss()
-                    } label: {
-                        HStack {
-                            Image(systemName: "sparkles")
-                                .foregroundColor(.orange)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Generate New Random World")
-                                    .font(.system(size: 14, weight: .bold, design: .monospaced))
-                                    .foregroundColor(.primary)
-                                Text("Your current world is automatically saved before generating a new world")
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .foregroundColor(.secondary)
+                Section("Create New World") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("SELECT WORLD TYPE")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundColor(.secondary)
+
+                        ForEach(WorldType.allCases) { type in
+                            Button {
+                                selectedWorldType = type
+                            } label: {
+                                HStack(spacing: 12) {
+                                    ZStack {
+                                        Circle()
+                                            .fill(selectedWorldType == type ? Color.green.opacity(0.2) : Color.gray.opacity(0.15))
+                                            .frame(width: 34, height: 34)
+                                        Image(systemName: type.iconName)
+                                            .font(.system(size: 15, weight: .bold))
+                                            .foregroundColor(selectedWorldType == type ? .green : .primary)
+                                    }
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        HStack {
+                                            Text(type.displayName)
+                                                .font(.system(size: 13, weight: .bold, design: .monospaced))
+                                                .foregroundColor(.primary)
+                                            Spacer()
+                                            if selectedWorldType == type {
+                                                Image(systemName: "checkmark.circle.fill")
+                                                    .foregroundColor(.green)
+                                                    .font(.system(size: 14))
+                                            }
+                                        }
+                                        Text(type.subtitle)
+                                            .font(.system(size: 10, design: .monospaced))
+                                            .foregroundColor(.secondary)
+                                            .lineLimit(2)
+                                    }
+                                }
+                                .padding(.vertical, 6)
+                                .padding(.horizontal, 8)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .fill(selectedWorldType == type ? Color.green.opacity(0.10) : Color.clear)
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(selectedWorldType == type ? Color.green.opacity(0.4) : Color.clear, lineWidth: 1)
+                                )
                             }
+                            .buttonStyle(.plain)
                         }
-                        .padding(.vertical, 4)
+
+                        TextField("New world name (optional)...", text: $worldNameInput)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 13, design: .monospaced))
+                            .padding(.top, 4)
+
+                        Button {
+                            world.regenerateNewWorld(type: selectedWorldType, customName: worldNameInput)
+                            dismiss()
+                        } label: {
+                            HStack {
+                                Spacer()
+                                Image(systemName: "sparkles")
+                                    .foregroundColor(.white)
+                                Text("Generate \(selectedWorldType.displayName) World")
+                                    .font(.system(size: 13, weight: .bold, design: .monospaced))
+                                    .foregroundColor(.white)
+                                Spacer()
+                            }
+                            .padding(.vertical, 10)
+                            .background(Color.green)
+                            .cornerRadius(8)
+                        }
+                        .padding(.top, 2)
+
+                        Text("Your current world is automatically saved before generating a new world.")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(.secondary)
                     }
+                    .padding(.vertical, 4)
                 }
 
                 Section("Saved Worlds (\(world.savedWorlds.count))") {

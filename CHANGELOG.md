@@ -10,6 +10,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [1.4.4] - 2026-10-18
+
+### Added
+- **5 Distinct Selectable World Types**:
+  - **Standard**: Classic procedural alpha terrain featuring rolling green hills, winding river canyons, monolithic cliffs, beaches, oak forests, and cozy cabins.
+  - **Flat World**: Endless level grass building plane (bedrock layer at y=0, 3 dirt layers, grass surface at y=4) with no basins or obstacles, ideal for creative mega-builds.
+  - **Sky Islands**: Floating islands suspended high in the sky over the open void with waterfalls cascading into the abyss, wooden cabins, and connecting bridges.
+  - **Amplified Peaks**: Towering extreme alpine mountains reaching up to y=36 with dramatic sheer stone cliffs, waterfalls, and high mountain spruce trees.
+  - **Endless Desert**: Vast rolling golden sand dunes with underlying sandstone bedrock, dried wood shrubs, and lush hidden water oases ringed with tall palm trees.
+- **No Invisible Barrier for Sky Islands**:
+  - Completely removed floor barrier and horizontal boundary wall clamping in Sky Islands, allowing full freedom to fly below the floating islands down into the open void.
+  - Added safety void catch: falling in walking mode below y < -50 safely respawns the player on the central spawn island with a gentle toast.
+  - Enabled unrestricted block placement into the void and across chunk boundaries.
+- **Interactive World Type Selector UI**:
+  - Added visual selection cards in the "Create New World" section of `SavedWorldsSheet` displaying each world type's SF Symbol icon, title, and descriptive subtitle.
+  - Included custom world renaming TextField and one-tap generation button.
+- **Full Backward Compatibility & Multiplayer Sync**:
+  - Preserves and restores world types seamlessly using `archetypeName` in saved world snapshots.
+  - Synchronizes `worldTypeRaw` across local multiplayer peers so joined clients experience the exact same world generation.
+
+---
+
 ## [1.4.3] - 2026-10-18
 
 ### Added

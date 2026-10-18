@@ -778,6 +778,7 @@ struct MultiplayerPacket: Codable {
     var worldID: UUID?
     var worldName: String?
     var seed: Int?
+    var worldTypeRaw: String?
     var deltas: [SavedBlockDelta]?
     // Single Block Update fields
     var blockDelta: SavedBlockDelta?
@@ -809,6 +810,61 @@ struct MultiplayerJoinPrompt: Identifiable {
     let worldName: String
     let isDirectInvitation: Bool
     var invitationHandler: ((Bool, MCSession?) -> Void)? = nil
+}
+
+enum WorldType: String, CaseIterable, Identifiable, Codable {
+    case standard = "standard"
+    case flat = "flat"
+    case skyIslands = "skyIslands"
+    case amplified = "amplified"
+    case desert = "desert"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .standard: return "Standard"
+        case .flat: return "Flat World"
+        case .skyIslands: return "Sky Islands"
+        case .amplified: return "Amplified Peaks"
+        case .desert: return "Endless Desert"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .standard: return "Lush hills, lakes, beaches, oak forests & cozy cabins"
+        case .flat: return "Endless level grass plane, perfect for creative building"
+        case .skyIslands: return "Floating islands in the open void, no invisible barrier"
+        case .amplified: return "Towering extreme mountains, massive sheer cliffs & high waterfalls"
+        case .desert: return "Vast rolling golden sand dunes, sandstone strata & hidden oases"
+        }
+    }
+
+    var iconName: String {
+        switch self {
+        case .standard: return "globe.americas.fill"
+        case .flat: return "square.fill"
+        case .skyIslands: return "cloud.fill"
+        case .amplified: return "mountain.2.fill"
+        case .desert: return "sun.max.fill"
+        }
+    }
+
+    static func from(archetypeName: String?) -> WorldType {
+        guard let name = archetypeName?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else {
+            return .standard
+        }
+        if let direct = WorldType(rawValue: name) {
+            return direct
+        }
+        for type in WorldType.allCases {
+            if type.displayName.lowercased() == name.lowercased() {
+                return type
+            }
+        }
+        return .standard
+    }
 }
 
 enum WorldArchetype: Int, CaseIterable {
@@ -923,6 +979,7 @@ final class VoxelWorld: NSObject, ObservableObject {
     @Published var currentWorldID: UUID = UUID()
     @Published var currentWorldName: String = "World"
     @Published var worldSeed: Int = Int.random(in: 1000...999_999)
+    @Published var currentWorldType: WorldType = .standard
     @Published var currentArchetype: WorldArchetype = .alphaCliffs
     @Published var savedWorlds: [SavedWorld] = []
     @Published var playerCoordText: String = "X: 0  Y: 14  Z: 0"
@@ -1359,38 +1416,52 @@ final class VoxelWorld: NSObject, ObservableObject {
         statusToast = "Skin: \(skin.displayName)"
     }
 
-    func regenerateNewWorld(customName: String? = nil) {
+    func regenerateNewWorld(type: WorldType = .standard, customName: String? = nil) {
         // Save the current world before generating a new one so no progress is lost
         saveCurrentWorld(silent: true)
         let newSeed = Int.random(in: 1000...999_999)
-        startNewWorld(seed: newSeed, customName: customName)
+        startNewWorld(seed: newSeed, type: type, customName: customName)
         saveCurrentWorld(silent: true)
         isInGame = true
         startMultiplayerServices()
         broadcastWorldSnapshotToPeers()
     }
 
-    private func startNewWorld(seed: Int, customName: String?) {
+    private func startNewWorld(seed: Int, type: WorldType = .standard, customName: String?) {
         clearAllWorldState()
 
         currentWorldID = UUID()
         worldSeed = seed
+        currentWorldType = type
         currentArchetype = WorldArchetype(rawValue: abs(seed) % WorldArchetype.allCases.count) ?? .alphaCliffs
 
         let trimmed = customName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        currentWorldName = trimmed.isEmpty ? "World #\(seed % 1000)" : trimmed
+        currentWorldName = trimmed.isEmpty ? "\(type.displayName) #\(seed % 1000)" : trimmed
 
         configureNoiseGenerators(seed: seed)
 
-        let spawnGround = surfaceHeightAt(x: 0, z: 10)
-        playerPosition = SCNVector3(0, Float(max(spawnGround, seaLevel)) + 6.5, 10)
+        if type == .skyIslands {
+            let spawnGround = surfaceHeightAt(x: 0, z: 0)
+            playerPosition = SCNVector3(0, Float(max(spawnGround, 22)) + 4.5, 0)
+        } else if type == .flat {
+            playerPosition = SCNVector3(0, 5.5, 0)
+        } else if type == .desert {
+            let spawnGround = surfaceHeightAt(x: 0, z: 0)
+            playerPosition = SCNVector3(0, Float(max(spawnGround, seaLevel)) + 6.5, 0)
+        } else if type == .amplified {
+            let spawnGround = surfaceHeightAt(x: 0, z: 0)
+            playerPosition = SCNVector3(0, Float(max(spawnGround, seaLevel)) + 6.5, 0)
+        } else {
+            let spawnGround = surfaceHeightAt(x: 0, z: 10)
+            playerPosition = SCNVector3(0, Float(max(spawnGround, seaLevel)) + 6.5, 10)
+        }
         yaw = 0.0
         pitch = -0.35
 
         updateStreamedChunks(force: true)
         resolveStuckPositionIfNeeded()
         updateCameraTransform()
-        statusToast = "\(currentArchetype.title) (500x500)"
+        statusToast = "\(type.displayName) (\(type == .skyIslands ? "Open Void" : "500x500"))"
     }
 
     private func configureNoiseGenerators(seed: Int) {
@@ -1401,45 +1472,89 @@ final class VoxelWorld: NSObject, ObservableObject {
     }
 
     private func surfaceHeightAt(x: Int, z: Int) -> Int {
-        let fx = Float(x)
-        let fz = Float(z)
+        switch currentWorldType {
+        case .flat:
+            return 4
 
-        let warpScale: Float = 0.025
-        let wx = fx + warpNoise.noise(fx * warpScale, fz * warpScale) * 18.0
-        let wz = fz + warpNoise.noise((fx + 97.0) * warpScale, (fz - 53.0) * warpScale) * 18.0
+        case .skyIslands:
+            let fx = Float(x)
+            let fz = Float(z)
+            let dist = sqrt(fx * fx + fz * fz)
+            if dist < 26.0 {
+                return 22
+            }
+            let warpScale: Float = 0.025
+            let wx = fx + warpNoise.noise(fx * warpScale, fz * warpScale) * 16.0
+            let wz = fz + warpNoise.noise((fx + 97.0) * warpScale, (fz - 53.0) * warpScale) * 16.0
+            let islandNoise = primaryNoise.fbm(x: wx * 0.032, y: wz * 0.032, octaves: 3)
+            if islandNoise > -0.10 {
+                let ridge = ridgeNoise.noise(wx * 0.04, wz * 0.04)
+                return max(16, min(28, Int(22.0 + ridge * 6.0)))
+            }
+            return -100 // void
 
-        switch currentArchetype {
-        case .alphaCliffs:
-            let base = primaryNoise.fbm(x: wx * 0.032, y: wz * 0.032, octaves: 4, persistence: 0.55, lacunarity: 2.1)
-            let cliffSelector = biomeNoise.noise(fx * 0.04, fz * 0.04)
-            let cliffBoost: Float = cliffSelector > 0.08 ? 6.5 : 0.0
-            let raw = 4.8 + base * 9.5 + cliffBoost
+        case .amplified:
+            let fx = Float(x)
+            let fz = Float(z)
+            let warpScale: Float = 0.02
+            let wx = fx + warpNoise.noise(fx * warpScale, fz * warpScale) * 22.0
+            let wz = fz + warpNoise.noise((fx + 83.0) * warpScale, (fz - 47.0) * warpScale) * 22.0
+            let base = primaryNoise.fbm(x: wx * 0.022, y: wz * 0.022, octaves: 5, persistence: 0.6, lacunarity: 2.2)
+            let ridge = 1.0 - abs(ridgeNoise.noise(wx * 0.035, wz * 0.035))
+            let raw = 5.0 + base * 20.0 + (ridge * ridge * 12.0)
+            return max(2, min(36, Int(round(raw))))
+
+        case .desert:
+            let fx = Float(x)
+            let fz = Float(z)
+            let warpScale: Float = 0.015
+            let wx = fx + warpNoise.noise(fx * warpScale, fz * warpScale) * 12.0
+            let wz = fz + warpNoise.noise((fx + 51.0) * warpScale, (fz - 73.0) * warpScale) * 12.0
+            let dunes = primaryNoise.fbm(x: wx * 0.018, y: wz * 0.018, octaves: 4, persistence: 0.5, lacunarity: 2.0)
+            let raw = 6.0 + dunes * 9.0
             return max(1, min(16, Int(round(raw))))
 
-        case .archipelago:
-            let islands = primaryNoise.fbm(x: wx * 0.045, y: wz * 0.045, octaves: 4, persistence: 0.5, lacunarity: 2.2)
-            let ridge = 1.0 - abs(ridgeNoise.noise(fx * 0.035, fz * 0.035))
-            let raw = 3.2 + islands * 9.0 + (ridge * ridge * 3.2)
-            return max(1, min(14, Int(round(raw))))
+        case .standard:
+            let fx = Float(x)
+            let fz = Float(z)
 
-        case .riverValley:
-            let hills = primaryNoise.fbm(x: wx * 0.03, y: wz * 0.03, octaves: 4)
-            let riverRibbon = abs(ridgeNoise.noise(wx * 0.022, wz * 0.022))
-            let riverCarve: Float = riverRibbon < 0.065 ? (0.065 - riverRibbon) * 95.0 : 0.0
-            let raw = 6.2 + hills * 8.5 - riverCarve
-            return max(1, min(15, Int(round(raw))))
+            let warpScale: Float = 0.025
+            let wx = fx + warpNoise.noise(fx * warpScale, fz * warpScale) * 18.0
+            let wz = fz + warpNoise.noise((fx + 97.0) * warpScale, (fz - 53.0) * warpScale) * 18.0
 
-        case .shatteredPeaks:
-            let r = 1.0 - abs(ridgeNoise.noise(wx * 0.04, wz * 0.04))
-            let detail = primaryNoise.fbm(x: fx * 0.06, y: fz * 0.06, octaves: 3)
-            let raw = 2.5 + (r * r * r) * 13.0 + detail * 4.5
-            return max(1, min(17, Int(round(raw))))
+            switch currentArchetype {
+            case .alphaCliffs:
+                let base = primaryNoise.fbm(x: wx * 0.032, y: wz * 0.032, octaves: 4, persistence: 0.55, lacunarity: 2.1)
+                let cliffSelector = biomeNoise.noise(fx * 0.04, fz * 0.04)
+                let cliffBoost: Float = cliffSelector > 0.08 ? 6.5 : 0.0
+                let raw = 4.8 + base * 9.5 + cliffBoost
+                return max(1, min(16, Int(round(raw))))
 
-        case .alphaWoodlands:
-            let rolling = primaryNoise.fbm(x: wx * 0.028, y: wz * 0.028, octaves: 4, persistence: 0.48, lacunarity: 2.0)
-            let pond = biomeNoise.noise(fx * 0.05, fz * 0.05)
-            let raw = 5.0 + rolling * 7.5 + pond * 2.5
-            return max(1, min(13, Int(round(raw))))
+            case .archipelago:
+                let islands = primaryNoise.fbm(x: wx * 0.045, y: wz * 0.045, octaves: 4, persistence: 0.5, lacunarity: 2.2)
+                let ridge = 1.0 - abs(ridgeNoise.noise(fx * 0.035, fz * 0.035))
+                let raw = 3.2 + islands * 9.0 + (ridge * ridge * 3.2)
+                return max(1, min(14, Int(round(raw))))
+
+            case .riverValley:
+                let hills = primaryNoise.fbm(x: wx * 0.03, y: wz * 0.03, octaves: 4)
+                let riverRibbon = abs(ridgeNoise.noise(wx * 0.022, wz * 0.022))
+                let riverCarve: Float = riverRibbon < 0.065 ? (0.065 - riverRibbon) * 95.0 : 0.0
+                let raw = 6.2 + hills * 8.5 - riverCarve
+                return max(1, min(15, Int(round(raw))))
+
+            case .shatteredPeaks:
+                let r = 1.0 - abs(ridgeNoise.noise(wx * 0.04, wz * 0.04))
+                let detail = primaryNoise.fbm(x: fx * 0.06, y: fz * 0.06, octaves: 3)
+                let raw = 2.5 + (r * r * r) * 13.0 + detail * 4.5
+                return max(1, min(17, Int(round(raw))))
+
+            case .alphaWoodlands:
+                let rolling = primaryNoise.fbm(x: wx * 0.028, y: wz * 0.028, octaves: 4, persistence: 0.48, lacunarity: 2.0)
+                let pond = biomeNoise.noise(fx * 0.05, fz * 0.05)
+                let raw = 5.0 + rolling * 7.5 + pond * 2.5
+                return max(1, min(13, Int(round(raw))))
+            }
         }
     }
 
@@ -1452,171 +1567,387 @@ final class VoxelWorld: NSObject, ObservableObject {
         let endX = startX + chunkSize
         let endZ = startZ + chunkSize
 
-        guard endX > -halfWorld && startX < halfWorld && endZ > -halfWorld && startZ < halfWorld else {
-            return
+        if currentWorldType != .skyIslands {
+            guard endX > -halfWorld && startX < halfWorld && endZ > -halfWorld && startZ < halfWorld else {
+                return
+            }
         }
 
         var localBlocks: [BlockCoord: BlockType] = [:]
         var heights: [Int: [Int: Int]] = [:]
 
-        for x in max(-halfWorld, startX)..<min(halfWorld, endX) {
-            heights[x] = [:]
-            for z in max(-halfWorld, startZ)..<min(halfWorld, endZ) {
-                let h = surfaceHeightAt(x: x, z: z)
-                heights[x]?[z] = h
+        let minX = (currentWorldType == .skyIslands) ? startX : max(-halfWorld, startX)
+        let maxX = (currentWorldType == .skyIslands) ? endX : min(halfWorld, endX)
+        let minZ = (currentWorldType == .skyIslands) ? startZ : max(-halfWorld, startZ)
+        let maxZ = (currentWorldType == .skyIslands) ? endZ : min(halfWorld, endZ)
 
-                // 1. Grass & Dirt hills + Sand beaches + Cobblestone cliffs + Smooth Stone underground strata
-                for y in 0...h {
-                    if y == h && (h == seaLevel || h == seaLevel - 1) {
-                        localBlocks[BlockCoord(x: x, y: y, z: z)] = .sand
-                    } else if y == h && h > seaLevel && h <= 11 {
-                        localBlocks[BlockCoord(x: x, y: y, z: z)] = .grass
-                    } else if y >= h - 2 && h > seaLevel && h <= 11 {
-                        localBlocks[BlockCoord(x: x, y: y, z: z)] = .dirt
-                    } else if y < h - 1 {
-                        localBlocks[BlockCoord(x: x, y: y, z: z)] = .smoothStone
+        if currentWorldType == .flat {
+            for x in minX..<maxX {
+                heights[x] = [:]
+                for z in minZ..<maxZ {
+                    heights[x]?[z] = 4
+                    localBlocks[BlockCoord(x: x, y: 0, z: z)] = .stone
+                    localBlocks[BlockCoord(x: x, y: 1, z: z)] = .dirt
+                    localBlocks[BlockCoord(x: x, y: 2, z: z)] = .dirt
+                    localBlocks[BlockCoord(x: x, y: 3, z: z)] = .dirt
+                    localBlocks[BlockCoord(x: x, y: 4, z: z)] = .grass
+                }
+            }
+        } else if currentWorldType == .skyIslands {
+            let warpScale: Float = 0.025
+            for x in minX..<maxX {
+                heights[x] = [:]
+                for z in minZ..<maxZ {
+                    let fx = Float(x)
+                    let fz = Float(z)
+                    let dist = sqrt(fx * fx + fz * fz)
+                    let isSpawnIsland = (dist < 26.0)
+
+                    let wx = fx + warpNoise.noise(fx * warpScale, fz * warpScale) * 16.0
+                    let wz = fz + warpNoise.noise((fx + 97.0) * warpScale, (fz - 53.0) * warpScale) * 16.0
+                    let islandNoise = primaryNoise.fbm(x: wx * 0.032, y: wz * 0.032, octaves: 3)
+
+                    if isSpawnIsland || islandNoise > -0.10 {
+                        let topY = isSpawnIsland ? 22 : max(16, min(28, Int(22.0 + ridgeNoise.noise(wx * 0.04, wz * 0.04) * 6.0)))
+                        let thickness = isSpawnIsland ? 7 : max(3, Int(4.0 + (islandNoise + 0.10) * 8.0))
+                        let botY = max(8, topY - thickness)
+                        heights[x]?[z] = topY
+
+                        for y in botY...topY {
+                            let c = BlockCoord(x: x, y: y, z: z)
+                            if y == topY {
+                                localBlocks[c] = .grass
+                            } else if y >= topY - 2 {
+                                localBlocks[c] = .dirt
+                            } else if y == botY {
+                                localBlocks[c] = .stone
+                            } else {
+                                localBlocks[c] = .smoothStone
+                            }
+                        }
+
+                        // Waterfall cascading over floating island edge into the open void!
+                        if !isSpawnIsland && islandNoise > 0.22 && (x % 9 == 0) && (z % 9 == 0) {
+                            let wCoord = BlockCoord(x: x, y: topY, z: z)
+                            localBlocks[wCoord] = .water
+                            waterSourceBlocks.insert(wCoord)
+                        }
                     } else {
-                        localBlocks[BlockCoord(x: x, y: y, z: z)] = .stone
+                        heights[x]?[z] = -100 // open void
                     }
                 }
+            }
+        } else if currentWorldType == .amplified {
+            for x in minX..<maxX {
+                heights[x] = [:]
+                for z in minZ..<maxZ {
+                    let h = surfaceHeightAt(x: x, z: z)
+                    heights[x]?[z] = h
 
-                // 2. Water filling basins up to seaLevel
-                if h < seaLevel {
-                    for y in (h + 1)...seaLevel {
-                        let wCoord = BlockCoord(x: x, y: y, z: z)
+                    for y in 0...h {
+                        let c = BlockCoord(x: x, y: y, z: z)
+                        if y == h {
+                            if h >= 25 {
+                                localBlocks[c] = .smoothStone
+                            } else if h == seaLevel || h == seaLevel - 1 {
+                                localBlocks[c] = .sand
+                            } else {
+                                localBlocks[c] = .grass
+                            }
+                        } else if y >= h - 2 && h < 25 {
+                            localBlocks[c] = .dirt
+                        } else if y < h - 1 {
+                            localBlocks[c] = .smoothStone
+                        } else {
+                            localBlocks[c] = .stone
+                        }
+                    }
+
+                    // Water in alpine basins
+                    if h < seaLevel {
+                        for y in (h + 1)...seaLevel {
+                            let wCoord = BlockCoord(x: x, y: y, z: z)
+                            localBlocks[wCoord] = .water
+                            waterSourceBlocks.insert(wCoord)
+                        }
+                    }
+
+                    // Alpine cliff waterfall spring
+                    let springNoise = abs(ridgeNoise.noise(Float(x) * 0.05, Float(z) * 0.05))
+                    if h >= 22 && springNoise < 0.025 && (x % 8 == 0) && (z % 8 == 0) {
+                        let wCoord = BlockCoord(x: x, y: h, z: z)
                         localBlocks[wCoord] = .water
                         waterSourceBlocks.insert(wCoord)
                     }
                 }
             }
-        }
+        } else if currentWorldType == .desert {
+            for x in minX..<maxX {
+                heights[x] = [:]
+                for z in minZ..<maxZ {
+                    let h = surfaceHeightAt(x: x, z: z)
+                    heights[x]?[z] = h
 
-        // 3. Deterministic Wooden Plank Structures (with Windows, Doors & Trapdoors!)
-        let chunkHash = abs((chunk.cx &* 73856093) ^ (chunk.cz &* 19349663) ^ (worldSeed &* 83492791)) % 100
-        if (chunk.cx == 0 && chunk.cz == 0) || chunkHash < 14 {
-            let midX = startX + chunkSize / 2
-            let midZ = startZ + chunkSize / 2
-            if midX >= -halfWorld + 3 && midX < halfWorld - 3 && midZ >= -halfWorld + 3 && midZ < halfWorld - 3 {
-                let baseH = max(heights[midX]?[midZ] ?? seaLevel, seaLevel) + 1
-                if chunkHash % 2 == 0 {
-                    // Wooden Plank Pier / Bridge segment
-                    for dx in -3...3 {
-                        for dz in -1...1 {
-                            localBlocks[BlockCoord(x: midX + dx, y: baseH, z: midZ + dz)] = .woodPlanks
-                        }
-                    }
-                    for dy in (baseH - 2)...(baseH + 1) where dy > 0 {
-                        localBlocks[BlockCoord(x: midX - 3, y: dy, z: midZ - 1)] = .woodLog
-                        localBlocks[BlockCoord(x: midX + 3, y: dy, z: midZ + 1)] = .woodLog
-                    }
-                } else {
-                    // Alpha Wooden Cabin with Glass Windows, Door & Pitched Roof
-                    for dx in -2...2 {
-                        for dz in -2...2 {
-                            localBlocks[BlockCoord(x: midX + dx, y: baseH, z: midZ + dz)] = .woodPlanks
-                            if abs(dx) == 2 && abs(dz) == 2 {
-                                for wy in (baseH + 1)...(baseH + 3) {
-                                    localBlocks[BlockCoord(x: midX + dx, y: wy, z: midZ + dz)] = .woodLog
-                                }
-                            } else if abs(dx) == 2 || abs(dz) == 2 {
-                                // Front doorway at (dx == 0, dz == 2)
-                                if dx == 0 && dz == 2 {
-                                    localBlocks[BlockCoord(x: midX, y: baseH + 1, z: midZ + 2)] = .door
-                                    localBlocks[BlockCoord(x: midX, y: baseH + 2, z: midZ + 2)] = .door
-                                    localBlocks[BlockCoord(x: midX, y: baseH + 3, z: midZ + 2)] = .woodPlanks
-                                } else {
-                                    localBlocks[BlockCoord(x: midX + dx, y: baseH + 1, z: midZ + dz)] = .woodPlanks
-                                    localBlocks[BlockCoord(x: midX + dx, y: baseH + 2, z: midZ + dz)] = (dx == 0 || dz == 0) ? .glass : .woodPlanks
-                                    localBlocks[BlockCoord(x: midX + dx, y: baseH + 3, z: midZ + dz)] = .woodPlanks
-                                }
+                    for y in 0...h {
+                        let c = BlockCoord(x: x, y: y, z: z)
+                        if y == h {
+                            if h == seaLevel + 1 {
+                                localBlocks[c] = .grass // fertile oasis shore
+                            } else {
+                                localBlocks[c] = .sand
                             }
+                        } else if y >= h - 3 {
+                            localBlocks[c] = .sand
+                        } else if y < h - 3 {
+                            localBlocks[c] = (y % 2 == 0) ? .smoothStone : .stone
                         }
                     }
 
-                    // Complete pitched roof using EdgeRoof and SideRoof (corner) blocks, and top Slab block
-                    for dx in -2...2 {
-                        for dz in -2...2 {
-                            let c = BlockCoord(x: midX + dx, y: baseH + 4, z: midZ + dz)
-                            let isCorner = (abs(dx) == 2 && abs(dz) == 2)
-                            if isCorner {
-                                localBlocks[c] = .roofCorner
-                                if dx < 0 && dz < 0 {
-                                    blockOrientations[c] = 1
-                                } else if dx > 0 && dz < 0 {
-                                    blockOrientations[c] = 2
-                                } else if dx > 0 && dz > 0 {
-                                    blockOrientations[c] = 3
-                                } else {
-                                    blockOrientations[c] = 0
-                                }
-                            } else {
-                                localBlocks[c] = .roof
-                                if abs(dz) >= abs(dx) {
-                                    blockOrientations[c] = (dz < 0) ? 2 : 0
-                                } else {
-                                    blockOrientations[c] = (dx < 0) ? 1 : 3
-                                }
-                            }
+                    // Oasis pools
+                    if h < seaLevel {
+                        for y in (h + 1)...seaLevel {
+                            let wCoord = BlockCoord(x: x, y: y, z: z)
+                            localBlocks[wCoord] = .water
+                            waterSourceBlocks.insert(wCoord)
                         }
                     }
-                    for dx in -1...1 {
-                        for dz in -1...1 {
-                            let c = BlockCoord(x: midX + dx, y: baseH + 5, z: midZ + dz)
-                            let isCorner = (abs(dx) == 1 && abs(dz) == 1)
-                            if isCorner {
-                                localBlocks[c] = .roofCorner
-                                if dx < 0 && dz < 0 {
-                                    blockOrientations[c] = 1
-                                } else if dx > 0 && dz < 0 {
-                                    blockOrientations[c] = 2
-                                } else if dx > 0 && dz > 0 {
-                                    blockOrientations[c] = 3
-                                } else {
-                                    blockOrientations[c] = 0
-                                }
-                            } else {
-                                localBlocks[c] = .roof
-                                if abs(dz) >= abs(dx) {
-                                    blockOrientations[c] = (dz < 0) ? 2 : 0
-                                } else {
-                                    blockOrientations[c] = (dx < 0) ? 1 : 3
-                                }
-                            }
+                }
+            }
+        } else {
+            for x in minX..<maxX {
+                heights[x] = [:]
+                for z in minZ..<maxZ {
+                    let h = surfaceHeightAt(x: x, z: z)
+                    heights[x]?[z] = h
+
+                    // 1. Grass & Dirt hills + Sand beaches + Cobblestone cliffs + Smooth Stone underground strata
+                    for y in 0...h {
+                        if y == h && (h == seaLevel || h == seaLevel - 1) {
+                            localBlocks[BlockCoord(x: x, y: y, z: z)] = .sand
+                        } else if y == h && h > seaLevel && h <= 11 {
+                            localBlocks[BlockCoord(x: x, y: y, z: z)] = .grass
+                        } else if y >= h - 2 && h > seaLevel && h <= 11 {
+                            localBlocks[BlockCoord(x: x, y: y, z: z)] = .dirt
+                        } else if y < h - 1 {
+                            localBlocks[BlockCoord(x: x, y: y, z: z)] = .smoothStone
+                        } else {
+                            localBlocks[BlockCoord(x: x, y: y, z: z)] = .stone
                         }
                     }
-                    let crestCoord = BlockCoord(x: midX, y: baseH + 6, z: midZ)
-                    localBlocks[crestCoord] = .slab
+
+                    // 2. Water filling basins up to seaLevel
+                    if h < seaLevel {
+                        for y in (h + 1)...seaLevel {
+                            let wCoord = BlockCoord(x: x, y: y, z: z)
+                            localBlocks[wCoord] = .water
+                            waterSourceBlocks.insert(wCoord)
+                        }
+                    }
                 }
             }
         }
 
-        // 4. Deterministic Alpha Trees
-        for x in max(-halfWorld + 2, startX + 2)..<min(halfWorld - 2, endX - 2) {
-            for z in max(-halfWorld + 2, startZ + 2)..<min(halfWorld - 2, endZ - 2) {
-                guard let h = heights[x]?[z], h > seaLevel && h < 14 else { continue }
-                if localBlocks[BlockCoord(x: x, y: h + 1, z: z)] != nil { continue }
+        // 3. Deterministic Wooden Plank Structures (with Windows, Doors & Roofs!) - skipped on Flat World
+        if currentWorldType != .flat {
+            let chunkHash = abs((chunk.cx &* 73856093) ^ (chunk.cz &* 19349663) ^ (worldSeed &* 83492791)) % 100
+            if (chunk.cx == 0 && chunk.cz == 0) || chunkHash < 14 {
+                let midX = startX + chunkSize / 2
+                let midZ = startZ + chunkSize / 2
+                let canBuildHere = (currentWorldType == .skyIslands) ? true : (midX >= -halfWorld + 3 && midX < halfWorld - 3 && midZ >= -halfWorld + 3 && midZ < halfWorld - 3)
+                if canBuildHere, let rawBase = heights[midX]?[midZ], rawBase > 0 && rawBase < 30 {
+                    let baseH = max(rawBase, seaLevel) + 1
+                    if chunkHash % 2 == 0 {
+                        // Wooden Plank Pier / Sky Bridge segment
+                        for dx in -3...3 {
+                            for dz in -1...1 {
+                                localBlocks[BlockCoord(x: midX + dx, y: baseH, z: midZ + dz)] = .woodPlanks
+                            }
+                        }
+                        for dy in (baseH - 2)...(baseH + 1) where dy > 0 {
+                            localBlocks[BlockCoord(x: midX - 3, y: dy, z: midZ - 1)] = .woodLog
+                            localBlocks[BlockCoord(x: midX + 3, y: dy, z: midZ + 1)] = .woodLog
+                        }
+                    } else {
+                        // Wooden Cabin with Glass Windows, Door & Pitched Roof
+                        let wallBlock: BlockType = (currentWorldType == .desert) ? .smoothStone : .woodPlanks
+                        let cornerPost: BlockType = (currentWorldType == .desert) ? .smoothStone : .woodLog
 
-                let colHash = abs((x &* 73856093) ^ (z &* 19349663) ^ (worldSeed &* 83492791)) % 100
-                let forest = biomeNoise.noise(Float(x) * 0.06, Float(z) * 0.06)
-                let treeChance = (currentArchetype == .alphaWoodlands) ? 11 : (forest > 0.0 ? 8 : 4)
-
-                if colHash < treeChance && (x % 3 == 0) && (z % 3 == 0) {
-                    let treeH = 4 + (colHash % 2)
-                    let topY = h + treeH
-                    for ly in (topY - 1)...(topY + 1) {
-                        let rad = (ly == topY + 1) ? 1 : 2
-                        for lx in (x - rad)...(x + rad) {
-                            for lz in (z - rad)...(z + rad) {
-                                if rad == 2 && abs(lx - x) == 2 && abs(lz - z) == 2 { continue }
-                                let leafCoord = BlockCoord(x: lx, y: ly, z: lz)
-                                if localBlocks[leafCoord] == nil {
-                                    localBlocks[leafCoord] = .leaves
+                        for dx in -2...2 {
+                            for dz in -2...2 {
+                                localBlocks[BlockCoord(x: midX + dx, y: baseH, z: midZ + dz)] = .woodPlanks
+                                if abs(dx) == 2 && abs(dz) == 2 {
+                                    for wy in (baseH + 1)...(baseH + 3) {
+                                        localBlocks[BlockCoord(x: midX + dx, y: wy, z: midZ + dz)] = cornerPost
+                                    }
+                                } else if abs(dx) == 2 || abs(dz) == 2 {
+                                    // Front doorway at (dx == 0, dz == 2)
+                                    if dx == 0 && dz == 2 {
+                                        localBlocks[BlockCoord(x: midX, y: baseH + 1, z: midZ + 2)] = .door
+                                        localBlocks[BlockCoord(x: midX, y: baseH + 2, z: midZ + 2)] = .door
+                                        localBlocks[BlockCoord(x: midX, y: baseH + 3, z: midZ + 2)] = wallBlock
+                                    } else {
+                                        localBlocks[BlockCoord(x: midX + dx, y: baseH + 1, z: midZ + dz)] = wallBlock
+                                        localBlocks[BlockCoord(x: midX + dx, y: baseH + 2, z: midZ + dz)] = (dx == 0 || dz == 0) ? .glass : wallBlock
+                                        localBlocks[BlockCoord(x: midX + dx, y: baseH + 3, z: midZ + dz)] = wallBlock
+                                    }
                                 }
                             }
                         }
+
+                        // Complete pitched roof using EdgeRoof and SideRoof (corner) blocks, and top Slab block
+                        for dx in -2...2 {
+                            for dz in -2...2 {
+                                let c = BlockCoord(x: midX + dx, y: baseH + 4, z: midZ + dz)
+                                let isCorner = (abs(dx) == 2 && abs(dz) == 2)
+                                if isCorner {
+                                    localBlocks[c] = .roofCorner
+                                    if dx < 0 && dz < 0 {
+                                        blockOrientations[c] = 1
+                                    } else if dx > 0 && dz < 0 {
+                                        blockOrientations[c] = 2
+                                    } else if dx > 0 && dz > 0 {
+                                        blockOrientations[c] = 3
+                                    } else {
+                                        blockOrientations[c] = 0
+                                    }
+                                } else {
+                                    localBlocks[c] = .roof
+                                    if abs(dz) >= abs(dx) {
+                                        blockOrientations[c] = (dz < 0) ? 2 : 0
+                                    } else {
+                                        blockOrientations[c] = (dx < 0) ? 1 : 3
+                                    }
+                                }
+                            }
+                        }
+                        for dx in -1...1 {
+                            for dz in -1...1 {
+                                let c = BlockCoord(x: midX + dx, y: baseH + 5, z: midZ + dz)
+                                let isCorner = (abs(dx) == 1 && abs(dz) == 1)
+                                if isCorner {
+                                    localBlocks[c] = .roofCorner
+                                    if dx < 0 && dz < 0 {
+                                        blockOrientations[c] = 1
+                                    } else if dx > 0 && dz < 0 {
+                                        blockOrientations[c] = 2
+                                    } else if dx > 0 && dz > 0 {
+                                        blockOrientations[c] = 3
+                                    } else {
+                                        blockOrientations[c] = 0
+                                    }
+                                } else {
+                                    localBlocks[c] = .roof
+                                    if abs(dz) >= abs(dx) {
+                                        blockOrientations[c] = (dz < 0) ? 2 : 0
+                                    } else {
+                                        blockOrientations[c] = (dx < 0) ? 1 : 3
+                                    }
+                                }
+                            }
+                        }
+                        let crestCoord = BlockCoord(x: midX, y: baseH + 6, z: midZ)
+                        localBlocks[crestCoord] = .slab
                     }
-                    for ty in (h + 1)...topY {
-                        localBlocks[BlockCoord(x: x, y: ty, z: z)] = .woodLog
+                }
+            }
+        }
+
+        // 4. Deterministic Trees (Tailored by World Type)
+        if currentWorldType == .desert {
+            // Desert: Oasis Palm Trees & Desert Shrubs
+            let treeMinX = max(-halfWorld + 2, startX + 2)
+            let treeMaxX = min(halfWorld - 2, endX - 2)
+            let treeMinZ = max(-halfWorld + 2, startZ + 2)
+            let treeMaxZ = min(halfWorld - 2, endZ - 2)
+            for x in treeMinX..<treeMaxX {
+                for z in treeMinZ..<treeMaxZ {
+                    guard let h = heights[x]?[z], (h == seaLevel + 1 || h == seaLevel + 2) else { continue }
+                    if localBlocks[BlockCoord(x: x, y: h + 1, z: z)] != nil { continue }
+                    let colHash = abs((x &* 73856093) ^ (z &* 19349663) ^ (worldSeed &* 83492791)) % 100
+                    if colHash < 14 && (x % 3 == 0) && (z % 3 == 0) {
+                        let trunkH = 5
+                        for ty in (h + 1)...(h + trunkH) {
+                            localBlocks[BlockCoord(x: x, y: ty, z: z)] = .woodLog
+                        }
+                        let topY = h + trunkH
+                        for lx in (x - 2)...(x + 2) {
+                            for lz in (z - 2)...(z + 2) {
+                                if abs(lx - x) <= 1 || abs(lz - z) <= 1 {
+                                    localBlocks[BlockCoord(x: lx, y: topY, z: lz)] = .leaves
+                                }
+                            }
+                        }
+                        localBlocks[BlockCoord(x: x, y: topY + 1, z: z)] = .leaves
+                    }
+                }
+            }
+        } else if currentWorldType == .skyIslands {
+            // Sky Islands: Trees on floating islands
+            let treeMinX = startX + 2
+            let treeMaxX = endX - 2
+            let treeMinZ = startZ + 2
+            let treeMaxZ = endZ - 2
+            for x in treeMinX..<treeMaxX {
+                for z in treeMinZ..<treeMaxZ {
+                    guard let h = heights[x]?[z], h >= 16 && h < 28 else { continue }
+                    if localBlocks[BlockCoord(x: x, y: h + 1, z: z)] != nil { continue }
+
+                    let colHash = abs((x &* 73856093) ^ (z &* 19349663) ^ (worldSeed &* 83492791)) % 100
+                    if colHash < 9 && (x % 3 == 0) && (z % 3 == 0) {
+                        let treeH = 4 + (colHash % 2)
+                        let topY = h + treeH
+                        for ly in (topY - 1)...(topY + 1) {
+                            let rad = (ly == topY + 1) ? 1 : 2
+                            for lx in (x - rad)...(x + rad) {
+                                for lz in (z - rad)...(z + rad) {
+                                    if rad == 2 && abs(lx - x) == 2 && abs(lz - z) == 2 { continue }
+                                    let leafCoord = BlockCoord(x: lx, y: ly, z: lz)
+                                    if localBlocks[leafCoord] == nil {
+                                        localBlocks[leafCoord] = .leaves
+                                    }
+                                }
+                            }
+                        }
+                        for ty in (h + 1)...topY {
+                            localBlocks[BlockCoord(x: x, y: ty, z: z)] = .woodLog
+                        }
+                    }
+                }
+            }
+        } else if currentWorldType != .flat {
+            // Standard & Amplified Peaks Trees
+            let maxTreeElevation = (currentWorldType == .amplified) ? 24 : 14
+            let treeMinX = max(-halfWorld + 2, startX + 2)
+            let treeMaxX = min(halfWorld - 2, endX - 2)
+            let treeMinZ = max(-halfWorld + 2, startZ + 2)
+            let treeMaxZ = min(halfWorld - 2, endZ - 2)
+            for x in treeMinX..<treeMaxX {
+                for z in treeMinZ..<treeMaxZ {
+                    guard let h = heights[x]?[z], h > seaLevel && h < maxTreeElevation else { continue }
+                    if localBlocks[BlockCoord(x: x, y: h + 1, z: z)] != nil { continue }
+
+                    let colHash = abs((x &* 73856093) ^ (z &* 19349663) ^ (worldSeed &* 83492791)) % 100
+                    let forest = biomeNoise.noise(Float(x) * 0.06, Float(z) * 0.06)
+                    let treeChance = (currentArchetype == .alphaWoodlands) ? 11 : (forest > 0.0 ? 8 : 4)
+
+                    if colHash < treeChance && (x % 3 == 0) && (z % 3 == 0) {
+                        let treeH = (currentWorldType == .amplified ? 5 : 4) + (colHash % 2)
+                        let topY = h + treeH
+                        for ly in (topY - 1)...(topY + 1) {
+                            let rad = (ly == topY + 1) ? 1 : 2
+                            for lx in (x - rad)...(x + rad) {
+                                for lz in (z - rad)...(z + rad) {
+                                    if rad == 2 && abs(lx - x) == 2 && abs(lz - z) == 2 { continue }
+                                    let leafCoord = BlockCoord(x: lx, y: ly, z: lz)
+                                    if localBlocks[leafCoord] == nil {
+                                        localBlocks[leafCoord] = .leaves
+                                    }
+                                }
+                            }
+                        }
+                        for ty in (h + 1)...topY {
+                            localBlocks[BlockCoord(x: x, y: ty, z: z)] = .woodLog
+                        }
                     }
                 }
             }
@@ -1660,8 +1991,9 @@ final class VoxelWorld: NSObject, ObservableObject {
         for dx in -renderDistance...renderDistance {
             for dz in -renderDistance...renderDistance {
                 let c = ChunkCoord(cx: playerChunk.cx + dx, cz: playerChunk.cz + dz)
-                if c.cx * chunkSize < halfWorld && (c.cx + 1) * chunkSize > -halfWorld &&
-                   c.cz * chunkSize < halfWorld && (c.cz + 1) * chunkSize > -halfWorld {
+                if currentWorldType == .skyIslands ||
+                   (c.cx * chunkSize < halfWorld && (c.cx + 1) * chunkSize > -halfWorld &&
+                    c.cz * chunkSize < halfWorld && (c.cz + 1) * chunkSize > -halfWorld) {
                     desiredChunks.insert(c)
                 }
             }
@@ -2134,7 +2466,7 @@ final class VoxelWorld: NSObject, ObservableObject {
         let worldID = currentWorldID
         let worldName = currentWorldName
         let seed = worldSeed
-        let archetypeTitle = currentArchetype.title
+        let archetypeTitle = currentWorldType.displayName
         let pPos = playerPosition
         let pYaw = yaw
         let pPitch = pitch
@@ -2223,6 +2555,7 @@ final class VoxelWorld: NSObject, ObservableObject {
         currentWorldID = saved.id
         currentWorldName = Self.cleanWorldName(saved.name, seed: saved.seed)
         worldSeed = saved.seed
+        currentWorldType = WorldType.from(archetypeName: saved.archetypeName)
         currentArchetype = WorldArchetype(rawValue: abs(saved.seed) % WorldArchetype.allCases.count) ?? .alphaCliffs
         configureNoiseGenerators(seed: saved.seed)
 
@@ -2739,10 +3072,12 @@ final class VoxelWorld: NSObject, ObservableObject {
             return
         }
 
-        guard placeCoord.x >= -halfWorld && placeCoord.x < halfWorld &&
-              placeCoord.z >= -halfWorld && placeCoord.z < halfWorld else {
-            statusToast = "Reached 500x500 world border!"
-            return
+        if currentWorldType != .skyIslands {
+            guard placeCoord.x >= -halfWorld && placeCoord.x < halfWorld &&
+                  placeCoord.z >= -halfWorld && placeCoord.z < halfWorld else {
+                statusToast = "Reached 500x500 world border!"
+                return
+            }
         }
 
         if selectedBlock.hasHitbox && !selectedBlock.isToggleable &&
@@ -3039,7 +3374,12 @@ final class VoxelWorld: NSObject, ObservableObject {
             if isFlying {
                 let instantStep: Float = value * 10.5 * (1.0 / 60.0)
                 let (newY, _) = resolveY(from: playerPosition, targetY: playerPosition.y + instantStep)
-                playerPosition.y = max(0.5 + playerFeetOffset, min(42.0, newY))
+                if currentWorldType == .skyIslands {
+                    playerPosition.y = min(60.0, newY)
+                } else {
+                    let maxY: Float = (currentWorldType == .amplified) ? 50.0 : 42.0
+                    playerPosition.y = max(0.5 + playerFeetOffset, min(maxY, newY))
+                }
                 updateCameraTransform()
             } else {
                 if value > 0.1 {
@@ -3121,17 +3461,33 @@ final class VoxelWorld: NSObject, ObservableObject {
                 verticalVelocity = 0
             }
 
-            let bedrockMinY: Float = 0.5 + playerFeetOffset
-            if pos.y < bedrockMinY {
-                pos.y = bedrockMinY
-                verticalVelocity = 0
+            if currentWorldType != .skyIslands {
+                let bedrockMinY: Float = 0.5 + playerFeetOffset
+                if pos.y < bedrockMinY {
+                    pos.y = bedrockMinY
+                    verticalVelocity = 0
+                }
             }
         }
 
-        let bound = Float(halfWorld - 1)
-        pos.x = max(-bound, min(bound, pos.x))
-        pos.z = max(-bound, min(bound, pos.z))
-        pos.y = max(0.5 + playerFeetOffset, min(42.0, pos.y))
+        if currentWorldType == .skyIslands {
+            // NO INVISIBLE BARRIER:
+            // The player is on sky islands and can fly beneath them into the open void.
+            // In walking/falling mode, if falling deep into the void (below y < -50),
+            // safely respawn at the spawn island.
+            if !isFlying && pos.y < -50.0 {
+                let spawnGround = surfaceHeightAt(x: 0, z: 0)
+                pos = SCNVector3(0, Float(max(spawnGround, 22)) + 4.0, 0)
+                verticalVelocity = 0
+                statusToast = "Fell into the void! Respawned on Sky Island."
+            }
+        } else {
+            let bound = Float(halfWorld - 1)
+            pos.x = max(-bound, min(bound, pos.x))
+            pos.z = max(-bound, min(bound, pos.z))
+            let maxY: Float = (currentWorldType == .amplified) ? 50.0 : 42.0
+            pos.y = max(0.5 + playerFeetOffset, min(maxY, pos.y))
+        }
 
         playerPosition = pos
         updateCameraTransform()
@@ -3556,6 +3912,7 @@ final class VoxelWorld: NSObject, ObservableObject {
                 worldID: currentWorldID,
                 worldName: currentWorldName,
                 seed: worldSeed,
+                worldTypeRaw: currentWorldType.rawValue,
                 deltas: [],
                 blockDelta: nil,
                 px: playerPosition.x,
@@ -3576,6 +3933,7 @@ final class VoxelWorld: NSObject, ObservableObject {
                     worldID: currentWorldID,
                     worldName: currentWorldName,
                     seed: worldSeed,
+                    worldTypeRaw: currentWorldType.rawValue,
                     deltas: chunk,
                     blockDelta: nil,
                     px: playerPosition.x,
@@ -3662,6 +4020,7 @@ final class VoxelWorld: NSObject, ObservableObject {
             currentWorldID = packet.worldID ?? UUID()
             currentWorldName = packet.worldName ?? "\(peer.displayName)'s World"
             worldSeed = seed
+            currentWorldType = WorldType.from(archetypeName: packet.worldTypeRaw)
             currentArchetype = WorldArchetype(rawValue: abs(seed) % WorldArchetype.allCases.count) ?? .alphaCliffs
             configureNoiseGenerators(seed: seed)
 
