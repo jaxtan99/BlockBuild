@@ -10,6 +10,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [1.4.8] - 2026-10-18
+
+### Changed
+- **Default Movement Speed Set to 5.0x**:
+  - Changed default `movementSpeedMultiplier` to `1.0` (which cleanly displays as **`5.0x`** in the settings slider, right in the middle of the `0.5x...10.0x` range).
+  - Added automatic migration `blockbuild_speed_v50_migrated` to update existing saved control configurations.
+- **Open Door Button Placed Higher by Default**:
+  - Moved default `doorButtonOffsetY` from `-90` to **`-180`**, elevating the contextual OPEN/CLOSE door and trapdoor action button well above the UP/DOWN and BREAK/PLACE control cluster to prevent any accidental interference with movement and action buttons.
+  - Added automatic migration `blockbuild_door_btn_v2_migrated` for existing layouts.
+
+---
+
 ## [1.4.7] - 2026-10-18
 
 ### Changed

@@ -421,14 +421,14 @@ struct ControlLayoutConfig: Codable, Equatable {
     var verticalOffsetX: CGFloat = 0
     var verticalOffsetY: CGFloat = 0
     var doorButtonOffsetX: CGFloat = 0
-    var doorButtonOffsetY: CGFloat = -90 // higher by default so it never interferes with controls
+    var doorButtonOffsetY: CGFloat = -180 // higher by default so it never interferes with controls
 
     var joystickScale: CGFloat = 1.0
     var actionScale: CGFloat = 1.0
     var hotbarScale: CGFloat = 1.0
     var controlOpacity: Double = 0.92
     var lookSensitivity: Float = 1.0
-    var movementSpeedMultiplier: Float = 0.2
+    var movementSpeedMultiplier: Float = 1.0
     var swapLeftRight: Bool = false
 
     static let `default` = ControlLayoutConfig()
@@ -453,13 +453,13 @@ struct ControlLayoutConfig: Codable, Equatable {
         verticalOffsetX: CGFloat = 0,
         verticalOffsetY: CGFloat = 0,
         doorButtonOffsetX: CGFloat = 0,
-        doorButtonOffsetY: CGFloat = -90,
+        doorButtonOffsetY: CGFloat = -180,
         joystickScale: CGFloat = 1.0,
         actionScale: CGFloat = 1.0,
         hotbarScale: CGFloat = 1.0,
         controlOpacity: Double = 0.92,
         lookSensitivity: Float = 1.0,
-        movementSpeedMultiplier: Float = 0.2,
+        movementSpeedMultiplier: Float = 1.0,
         swapLeftRight: Bool = false
     ) {
         self.joystickOffsetX = joystickOffsetX
@@ -492,14 +492,14 @@ struct ControlLayoutConfig: Codable, Equatable {
         verticalOffsetX = try container.decodeIfPresent(CGFloat.self, forKey: .verticalOffsetX) ?? 0
         verticalOffsetY = try container.decodeIfPresent(CGFloat.self, forKey: .verticalOffsetY) ?? 0
         doorButtonOffsetX = try container.decodeIfPresent(CGFloat.self, forKey: .doorButtonOffsetX) ?? 0
-        doorButtonOffsetY = try container.decodeIfPresent(CGFloat.self, forKey: .doorButtonOffsetY) ?? -90
+        doorButtonOffsetY = try container.decodeIfPresent(CGFloat.self, forKey: .doorButtonOffsetY) ?? -180
 
         joystickScale = try container.decodeIfPresent(CGFloat.self, forKey: .joystickScale) ?? 1.0
         actionScale = try container.decodeIfPresent(CGFloat.self, forKey: .actionScale) ?? 1.0
         hotbarScale = try container.decodeIfPresent(CGFloat.self, forKey: .hotbarScale) ?? 1.0
         controlOpacity = try container.decodeIfPresent(Double.self, forKey: .controlOpacity) ?? 0.92
         lookSensitivity = try container.decodeIfPresent(Float.self, forKey: .lookSensitivity) ?? 1.0
-        movementSpeedMultiplier = try container.decodeIfPresent(Float.self, forKey: .movementSpeedMultiplier) ?? 0.2
+        movementSpeedMultiplier = try container.decodeIfPresent(Float.self, forKey: .movementSpeedMultiplier) ?? 1.0
         swapLeftRight = try container.decodeIfPresent(Bool.self, forKey: .swapLeftRight) ?? false
     }
 }
@@ -1239,9 +1239,16 @@ final class VoxelWorld: NSObject, ObservableObject {
         if let data = UserDefaults.standard.data(forKey: controlLayoutKey),
            let decoded = try? JSONDecoder().decode(ControlLayoutConfig.self, from: data) {
             controlLayout = decoded
-            if UserDefaults.standard.object(forKey: "blockbuild_speed_v02_migrated") == nil {
-                controlLayout.movementSpeedMultiplier = 0.2
-                UserDefaults.standard.set(true, forKey: "blockbuild_speed_v02_migrated")
+            if UserDefaults.standard.object(forKey: "blockbuild_speed_v50_migrated") == nil {
+                controlLayout.movementSpeedMultiplier = 1.0
+                UserDefaults.standard.set(true, forKey: "blockbuild_speed_v50_migrated")
+                saveControlLayout()
+            }
+            if UserDefaults.standard.object(forKey: "blockbuild_door_btn_v2_migrated") == nil {
+                if controlLayout.doorButtonOffsetY == -90 || controlLayout.doorButtonOffsetY == 0 {
+                    controlLayout.doorButtonOffsetY = -180
+                }
+                UserDefaults.standard.set(true, forKey: "blockbuild_door_btn_v2_migrated")
                 saveControlLayout()
             }
         }
