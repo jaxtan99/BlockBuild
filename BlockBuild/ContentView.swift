@@ -1665,7 +1665,7 @@ struct InGameSettingsSheet: View {
                                 .font(.system(size: 11, weight: .bold, design: .monospaced))
                                 .foregroundColor(.cyan)
                         }
-                        Slider(value: $world.controlLayout.movementSpeedMultiplier, in: 0.1...0.4, step: 0.02)
+                        Slider(value: $world.controlLayout.movementSpeedMultiplier, in: 0.1...2.0, step: 0.02)
                     }
 
                     VStack(alignment: .leading, spacing: 6) {

@@ -10,6 +10,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [1.4.6] - 2026-10-18
+
+### Changed
+- **Movement Speed Limit Expanded to 10.0x**:
+  - Expanded the Settings slider range for Movement Speed from `0.1...0.4` to `0.1...2.0` (with clean `0.02` step increments), allowing players to adjust movement speed all the way from `0.5x` up to a maximum limit of **`10.0x`** (`2.0 / 0.2 = 10.0x`).
+  - Updated physics calculation in `stepPhysics(dt:)` to support multiplier clamping up to `min(10.0, ...)` without throttling higher velocity movement.
+
+---
+
 ## [1.4.5] - 2026-10-18
 
 ### Changed

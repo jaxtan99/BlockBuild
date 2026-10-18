@@ -3389,7 +3389,7 @@ final class VoxelWorld: NSObject, ObservableObject {
         // Clamping dt to 0.08s (12.5 FPS) prevents large physics tunneling while ensuring
         // player movement speed remains completely consistent even when framerate dips.
         let clampedDt = min(dt, 0.08)
-        let mult = max(0.4, min(2.0, controlLayout.movementSpeedMultiplier))
+        let mult = max(0.05, min(10.0, controlLayout.movementSpeedMultiplier))
         let baseWalkSpeed: Float = 2.75
         let baseFlySpeed: Float = 4.2
         let horizSpeed: Float = (isFlying ? baseFlySpeed : baseWalkSpeed) * mult
