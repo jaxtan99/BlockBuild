@@ -858,7 +858,7 @@ final class VoxelWorld: NSObject, ObservableObject {
     private var fpsFrameCounter: Int = 0
     private var fpsTimeAccumulator: Float = 0.0
 
-    // Inventory & Hotbar state (all 12 blocks)
+    // Inventory & Hotbar state (all 13 blocks)
     @Published var selectedBlock: BlockType = .grass
     @Published var inventory: [BlockType: Int] = [
         .grass: 20,
@@ -872,6 +872,7 @@ final class VoxelWorld: NSObject, ObservableObject {
         .glass: 20,
         .door: 10,
         .roof: 20,
+        .roofCorner: 20,
         .slab: 20,
         .water: 15
     ]
@@ -912,7 +913,7 @@ final class VoxelWorld: NSObject, ObservableObject {
         didSet {
             UserDefaults.standard.set(isPerformanceStabilizationEnabled, forKey: "blockbuild_performance_stabilization")
             if isPerformanceStabilizationEnabled {
-                setFPSLimit(40)
+                setFPSLimit(30)
                 setRenderDistance(2)
             }
         }
@@ -923,7 +924,7 @@ final class VoxelWorld: NSObject, ObservableObject {
         set { isPerformanceStabilizationEnabled = newValue }
     }
 
-    @Published var fpsLimit: Int = 40 {
+    @Published var fpsLimit: Int = 30 {
         didSet {
             UserDefaults.standard.set(fpsLimit, forKey: "blockbuild_fps_limit")
         }
@@ -1057,10 +1058,10 @@ final class VoxelWorld: NSObject, ObservableObject {
         }
 
         let savedFPS = UserDefaults.standard.integer(forKey: "blockbuild_fps_limit")
-        if [0, 30, 35, 40, 45, 50, 55, 60].contains(savedFPS) && UserDefaults.standard.object(forKey: "blockbuild_fps_limit") != nil {
+        if [0, 30, 40, 60].contains(savedFPS) && UserDefaults.standard.object(forKey: "blockbuild_fps_limit") != nil {
             self.fpsLimit = savedFPS
         } else {
-            self.fpsLimit = self.isPerformanceStabilizationEnabled ? 40 : 60
+            self.fpsLimit = self.isPerformanceStabilizationEnabled ? 30 : 60
         }
 
         if UserDefaults.standard.object(forKey: "blockbuild_multiplayer_enabled") != nil {
@@ -1150,7 +1151,7 @@ final class VoxelWorld: NSObject, ObservableObject {
 
         // Roof corner step geometry: quarter-cube (0.50 x 0.50 x 0.50) - half the top of normal stair
         roofCornerStepGeo = SCNBox(width: 0.50, height: 0.50, length: 0.50, chamferRadius: 0.0)
-        roofCornerStepGeo.materials = BlockType.roof.materials
+        roofCornerStepGeo.materials = BlockType.roofCorner.materials
 
         // Slab geometry (1.0 x 0.50 x 1.0) - based off the roof block
         slabGeo = SCNBox(width: 1.0, height: 0.50, length: 1.0, chamferRadius: 0.0)
@@ -1234,8 +1235,8 @@ final class VoxelWorld: NSObject, ObservableObject {
     }
 
     func setFPSLimit(_ limit: Int) {
-        let valid = [0, 30, 35, 40, 45, 50, 55, 60]
-        let chosen = valid.contains(limit) ? limit : 40
+        let valid = [0, 30, 40, 60]
+        let chosen = valid.contains(limit) ? limit : 30
         guard chosen != fpsLimit else { return }
         fpsLimit = chosen
     }
@@ -1576,15 +1577,8 @@ final class VoxelWorld: NSObject, ObservableObject {
         }
 
         let chunksToLoad = desiredChunks.subtracting(activeChunks)
-        var generatedAnyNewChunk = false
         for c in chunksToLoad {
-            if !generatedChunks.contains(c) {
-                generatedAnyNewChunk = true
-            }
             generateChunkIfNeeded(c)
-        }
-        if generatedAnyNewChunk {
-            hasUnsavedChanges = true
         }
 
         for c in chunksToLoad {
@@ -2211,14 +2205,21 @@ final class VoxelWorld: NSObject, ObservableObject {
 
     private func persistSavedWorlds() {
         guard !savedWorlds.isEmpty else { return }
-        guard let data = try? JSONEncoder().encode(savedWorlds) else { return }
+        let worldsToSave = self.savedWorlds
+        let primaryURL = self.saveFileURL
+        let backupURL = self.backupFileURL
 
-        // Primary file
-        try? data.write(to: saveFileURL, options: .atomic)
-        // Redundant backup file so updates can never lose worlds
-        try? data.write(to: backupFileURL, options: .atomic)
-        // Redundant UserDefaults mirror
-        UserDefaults.standard.set(data, forKey: "blockbuild_saved_worlds_v2")
+        DispatchQueue.global(qos: .utility).async {
+            guard let data = try? JSONEncoder().encode(worldsToSave) else { return }
+            // Primary file
+            try? data.write(to: primaryURL, options: .atomic)
+            // Redundant backup file so updates can never lose worlds
+            try? data.write(to: backupURL, options: .atomic)
+            // Redundant UserDefaults mirror
+            DispatchQueue.main.async {
+                UserDefaults.standard.set(data, forKey: "blockbuild_saved_worlds_v2")
+            }
+        }
     }
 
     // MARK: - Scene Node Management (Seamless Water Culling & Open/Closed Doors/Trapdoors)
@@ -2338,56 +2339,6 @@ final class VoxelWorld: NSObject, ObservableObject {
         return false
     }
 
-    private func getRoofCornerOffset(at coord: BlockCoord) -> (stepX: Float, stepZ: Float)? {
-        guard blocks[coord] == .roof else { return nil }
-
-        // Check horizontal neighbors on X axis (West/East) and Z axis (North/South)
-        let westRoof = (blocks[BlockCoord(x: coord.x - 1, y: coord.y, z: coord.z)] == .roof)
-        let eastRoof = (blocks[BlockCoord(x: coord.x + 1, y: coord.y, z: coord.z)] == .roof)
-        let northRoof = (blocks[BlockCoord(x: coord.x, y: coord.y, z: coord.z - 1)] == .roof)
-        let southRoof = (blocks[BlockCoord(x: coord.x, y: coord.y, z: coord.z + 1)] == .roof)
-
-        // Also check if neighbor is one block above or below (sloped roof neighbors)
-        let westRoofAdj = westRoof || (blocks[BlockCoord(x: coord.x - 1, y: coord.y + 1, z: coord.z)] == .roof) || (blocks[BlockCoord(x: coord.x - 1, y: coord.y - 1, z: coord.z)] == .roof)
-        let eastRoofAdj = eastRoof || (blocks[BlockCoord(x: coord.x + 1, y: coord.y + 1, z: coord.z)] == .roof) || (blocks[BlockCoord(x: coord.x + 1, y: coord.y - 1, z: coord.z)] == .roof)
-        let northRoofAdj = northRoof || (blocks[BlockCoord(x: coord.x, y: coord.y + 1, z: coord.z - 1)] == .roof) || (blocks[BlockCoord(x: coord.x, y: coord.y - 1, z: coord.z - 1)] == .roof)
-        let southRoofAdj = southRoof || (blocks[BlockCoord(x: coord.x, y: coord.y + 1, z: coord.z + 1)] == .roof) || (blocks[BlockCoord(x: coord.x, y: coord.y - 1, z: coord.z + 1)] == .roof)
-
-        // ONLY genuine corners: one neighbor along X axis AND one neighbor along Z axis
-        let hasXNeighbor = westRoofAdj || eastRoofAdj
-        let hasZNeighbor = northRoofAdj || southRoofAdj
-        guard hasXNeighbor && hasZNeighbor else {
-            return nil
-        }
-
-        // Straight continuous rows (e.g. west AND east without turning, or north AND south without turning) are not corners
-        let isStraightX = westRoofAdj && eastRoofAdj
-        let isStraightZ = northRoofAdj && southRoofAdj
-        if isStraightX && !isStraightZ { return nil }
-        if isStraightZ && !isStraightX { return nil }
-
-        let dir = blockOrientations[coord] ?? 0
-        let xSign: Float
-        if eastRoofAdj && !westRoofAdj {
-            xSign = 1.0
-        } else if westRoofAdj && !eastRoofAdj {
-            xSign = -1.0
-        } else {
-            xSign = (dir == 1) ? 1.0 : -1.0
-        }
-
-        let zSign: Float
-        if southRoofAdj && !northRoofAdj {
-            zSign = 1.0
-        } else if northRoofAdj && !southRoofAdj {
-            zSign = -1.0
-        } else {
-            zSign = (dir == 2) ? 1.0 : -1.0
-        }
-
-        return (stepX: xSign * 0.25, stepZ: zSign * 0.25)
-    }
-
     private func configureNode(_ node: SCNNode, for coord: BlockCoord, type: BlockType) {
         let fx = Float(coord.x)
         let fy = Float(coord.y)
@@ -2426,21 +2377,35 @@ final class VoxelWorld: NSObject, ObservableObject {
             baseNode.categoryBitMask = 1
             node.addChildNode(baseNode)
 
-            if let corner = getRoofCornerOffset(at: coord) {
-                // Special Corner Roof Block: top step is a quarter-cube (half the top of normal stair)
-                let cornerStepNode = SCNNode(geometry: roofCornerStepGeo)
-                cornerStepNode.position = SCNVector3(corner.stepX, 0.25, corner.stepZ)
-                cornerStepNode.categoryBitMask = 1
-                node.addChildNode(cornerStepNode)
-            } else {
-                let stepNode = SCNNode(geometry: roofStepGeo)
-                stepNode.position = SCNVector3(0, 0.25, -0.25)
-                stepNode.categoryBitMask = 1
-                node.addChildNode(stepNode)
+            let stepNode = SCNNode(geometry: roofStepGeo)
+            stepNode.position = SCNVector3(0, 0.25, -0.25)
+            stepNode.categoryBitMask = 1
+            node.addChildNode(stepNode)
 
-                let dir = blockOrientations[coord] ?? 0
-                node.eulerAngles = SCNVector3(0, roofAngle(for: dir), 0)
-            }
+            let dir = blockOrientations[coord] ?? 0
+            node.eulerAngles = SCNVector3(0, roofAngle(for: dir), 0)
+
+            node.position = SCNVector3(fx, fy, fz)
+            node.renderingOrder = 0
+            node.categoryBitMask = 1
+
+        case .roofCorner:
+            node.geometry = nil
+            node.childNodes.forEach { $0.removeFromParentNode() }
+            node.eulerAngles = SCNVector3(0, 0, 0)
+
+            let baseNode = SCNNode(geometry: roofBaseGeo)
+            baseNode.position = SCNVector3(0, -0.25, 0)
+            baseNode.categoryBitMask = 1
+            node.addChildNode(baseNode)
+
+            let cornerStepNode = SCNNode(geometry: roofCornerStepGeo)
+            cornerStepNode.position = SCNVector3(0.25, 0.25, -0.25)
+            cornerStepNode.categoryBitMask = 1
+            node.addChildNode(cornerStepNode)
+
+            let dir = blockOrientations[coord] ?? 0
+            node.eulerAngles = SCNVector3(0, roofAngle(for: dir), 0)
 
             node.position = SCNVector3(fx, fy, fz)
             node.renderingOrder = 0
@@ -2661,7 +2626,7 @@ final class VoxelWorld: NSObject, ObservableObject {
 
         inventory[selectedBlock] = available - 1
         var dirToSet: Int? = nil
-        if selectedBlock == .roof {
+        if selectedBlock == .roof || selectedBlock == .roofCorner {
             dirToSet = playerFacingDirection()
         }
         placeBlockInternal(at: placeCoord, type: selectedBlock, direction: dirToSet, broadcast: true)
@@ -2694,7 +2659,7 @@ final class VoxelWorld: NSObject, ObservableObject {
 
         if let dir = direction {
             blockOrientations[placeCoord] = dir
-        } else if type == .roof && blockOrientations[placeCoord] == nil {
+        } else if (type == .roof || type == .roofCorner) && blockOrientations[placeCoord] == nil {
             blockOrientations[placeCoord] = playerFacingDirection()
         }
 
@@ -2963,7 +2928,9 @@ final class VoxelWorld: NSObject, ObservableObject {
     }
 
     func stepPhysics(dt: Float) {
-        let clampedDt = isPerformanceStabilizationEnabled ? min(dt, 1.0 / 40.0) : min(dt, 0.1)
+        // Clamping dt to 0.08s (12.5 FPS) prevents large physics tunneling while ensuring
+        // player movement speed remains completely consistent even when framerate dips.
+        let clampedDt = min(dt, 0.08)
         let mult = max(0.4, min(2.0, controlLayout.movementSpeedMultiplier))
         let baseWalkSpeed: Float = 2.75
         let baseFlySpeed: Float = 4.2

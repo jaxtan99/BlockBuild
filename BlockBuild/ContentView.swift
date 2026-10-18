@@ -910,7 +910,7 @@ struct LocalMultiplayerSheet: View {
                 playerNameInput = world.localPlayerName
                 world.startMultiplayerServices()
             }
-            .onChange(of: world.isInGame) { _, inGame in
+            .onChange(of: world.isInGame) { inGame in
                 if inGame {
                     dismiss()
                 }
@@ -1454,7 +1454,7 @@ struct InGameSettingsSheet: View {
                                 Text("Performance Stabilization")
                                     .font(.system(size: 13, weight: .bold, design: .monospaced))
                             }
-                            Text("Locks FPS to 40, sets render distance to 2 chunks, and optimizes chunk streaming for smooth, lag-free gameplay.")
+                            Text("Locks FPS to 30, sets render distance to 2 chunks, and optimizes chunk streaming for smooth, lag-free gameplay.")
                                 .font(.system(size: 11, design: .monospaced))
                                 .foregroundColor(.secondary)
                         }
@@ -1465,13 +1465,9 @@ struct InGameSettingsSheet: View {
                         set: { world.setFPSLimit($0) }
                     )) {
                         Text("Unlimited").tag(0)
-                        Text("30 FPS").tag(30)
-                        Text("35 FPS").tag(35)
-                        Text("40 FPS (Stable)").tag(40)
-                        Text("45 FPS").tag(45)
-                        Text("50 FPS").tag(50)
-                        Text("55 FPS").tag(55)
-                        Text("60 FPS").tag(60)
+                        Text("30 FPS (Stable)").tag(30)
+                        Text("40 FPS").tag(40)
+                        Text("60 FPS (Smooth)").tag(60)
                     } label: {
                         HStack {
                             Image(systemName: "speedometer")
@@ -1541,7 +1537,7 @@ struct InGameSettingsSheet: View {
                                 .font(.system(size: 13, weight: .bold, design: .monospaced))
                         }
                     }
-                    .onChange(of: world.isMusicEnabled) { _, enabled in
+                    .onChange(of: world.isMusicEnabled) { enabled in
                         AlphaBackgroundMusic.shared.setEnabled(enabled)
                     }
 
@@ -1792,7 +1788,7 @@ struct VoxelSceneView: UIViewRepresentable {
             if #available(iOS 15.0, *) {
                 if world.fpsLimit > 0 {
                     let rate = Float(world.fpsLimit)
-                    link.preferredFrameRateRange = CAFrameRateRange(minimum: rate, maximum: rate, preferred: rate)
+                    link.preferredFrameRateRange = CAFrameRateRange(minimum: min(15, rate), maximum: rate, preferred: rate)
                 } else {
                     link.preferredFrameRateRange = .default
                 }

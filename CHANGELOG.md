@@ -10,6 +10,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [1.4.1] - 2026-10-18
+
+### Added
+- **Dedicated Corner Roof Block**: Added `.roofCorner` as a separate, selectable block type (ID 13) in the hotbar and inventory with its own quarter-step geometry and rotation based on player facing direction, keeping standard `.roof` blocks strictly uniform without unexpected automatic neighbor mutations.
+
+### Changed
+- **30 FPS Performance Stabilization**: Updated "Performance Stabilization" mode to lock the target frame rate to **30 FPS** (formerly 40) alongside 2 chunks render distance for rock-solid stability and battery efficiency.
+- **Display-Friendly FPS Limit Options**: Streamlined FPS limit options to clean hardware-synchronized refresh rates (**Unlimited**, **30 FPS (Stable)**, **40 FPS**, and **60 FPS (Smooth)**), eliminating CADisplayLink jitter caused by non-standard refresh intervals.
+
+### Fixed
+- **Player Movement Decoupling**: Fixed physics delta-time clamping in `stepPhysics(dt:)` so player walk and fly speeds never artificially slow down during framerate dips or when locked to 30 FPS.
+- **Movement Freezes & Hitching**: Completely eliminated periodic movement freezes by moving world JSON serialization and disk persistence to a background utility queue (`DispatchQueue.global(qos: .utility)`) and preventing procedural chunk streaming from marking unnecessary unsaved changes.
+- **iOS 16 Compatibility**: Fixed `.onChange` modifiers in `ContentView.swift` to ensure seamless backwards compatibility across iOS 16 and iOS 17+.
+
+---
+
 ## [1.4.0] - 2026-10-18
 
 ### Added

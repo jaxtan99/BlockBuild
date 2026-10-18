@@ -16,6 +16,7 @@ enum BlockType: Int, CaseIterable, Identifiable, Codable {
     case grass = 10
     case dirt = 11
     case slab = 12
+    case roofCorner = 13
 
     var id: Int { rawValue }
 
@@ -34,6 +35,7 @@ enum BlockType: Int, CaseIterable, Identifiable, Codable {
         case .grass: return "Grass"
         case .dirt: return "Dirt"
         case .slab: return "Slab"
+        case .roofCorner: return "Corner Roof"
         }
     }
 
@@ -52,13 +54,14 @@ enum BlockType: Int, CaseIterable, Identifiable, Codable {
         case .grass: return "Grass"
         case .dirt: return "Dirt"
         case .slab: return "Slab"
+        case .roofCorner: return "Corner Roof"
         }
     }
 
     /// Blocks that do not fully occlude neighbor faces (transparent or non-full-cube geometry)
     var isTransparent: Bool {
         switch self {
-        case .water, .glass, .door, .roof, .slab:
+        case .water, .glass, .door, .roof, .slab, .roofCorner:
             return true
         default:
             return false
@@ -266,7 +269,7 @@ enum BlockType: Int, CaseIterable, Identifiable, Codable {
             }
             return UIColor(red: 0.68, green: 0.52, blue: 0.29, alpha: 1.0)
 
-        case .roof, .slab:
+        case .roof, .slab, .roofCorner:
             let mortarY = (y % 4 == 0)
             let stagger = (y / 4) % 2 == 1
             let stoneX = (x + (stagger ? 4 : 0)) % 8 == 0
