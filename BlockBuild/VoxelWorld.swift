@@ -1042,7 +1042,7 @@ final class VoxelWorld: NSObject, ObservableObject {
         didSet {
             UserDefaults.standard.set(isPerformanceStabilizationEnabled, forKey: "blockbuild_performance_stabilization")
             if isPerformanceStabilizationEnabled {
-                setFPSLimit(30)
+                setFPSLimit(60)
                 setRenderDistance(2)
             }
         }
@@ -1053,7 +1053,7 @@ final class VoxelWorld: NSObject, ObservableObject {
         set { isPerformanceStabilizationEnabled = newValue }
     }
 
-    @Published var fpsLimit: Int = 30 {
+    @Published var fpsLimit: Int = 60 {
         didSet {
             UserDefaults.standard.set(fpsLimit, forKey: "blockbuild_fps_limit")
         }
@@ -1190,7 +1190,13 @@ final class VoxelWorld: NSObject, ObservableObject {
         if [0, 30, 40, 60].contains(savedFPS) && UserDefaults.standard.object(forKey: "blockbuild_fps_limit") != nil {
             self.fpsLimit = savedFPS
         } else {
-            self.fpsLimit = self.isPerformanceStabilizationEnabled ? 30 : 60
+            self.fpsLimit = 60
+        }
+
+        if UserDefaults.standard.object(forKey: "blockbuild_fps_60_default_migrated") == nil {
+            self.fpsLimit = 60
+            UserDefaults.standard.set(60, forKey: "blockbuild_fps_limit")
+            UserDefaults.standard.set(true, forKey: "blockbuild_fps_60_default_migrated")
         }
 
         if UserDefaults.standard.object(forKey: "blockbuild_multiplayer_enabled") != nil {
@@ -1376,7 +1382,7 @@ final class VoxelWorld: NSObject, ObservableObject {
 
     func setFPSLimit(_ limit: Int) {
         let valid = [0, 30, 40, 60]
-        let chosen = valid.contains(limit) ? limit : 30
+        let chosen = valid.contains(limit) ? limit : 60
         guard chosen != fpsLimit else { return }
         fpsLimit = chosen
     }

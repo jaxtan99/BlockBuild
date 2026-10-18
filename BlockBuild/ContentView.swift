@@ -1552,7 +1552,7 @@ struct InGameSettingsSheet: View {
                                 Text("Performance Stabilization")
                                     .font(.system(size: 13, weight: .bold, design: .monospaced))
                             }
-                            Text("Locks FPS to 30, sets render distance to 2 chunks, and optimizes chunk streaming for smooth, lag-free gameplay.")
+                            Text("Locks FPS to 60, sets render distance to 2 chunks, and optimizes chunk streaming for smooth, lag-free gameplay.")
                                 .font(.system(size: 11, design: .monospaced))
                                 .foregroundColor(.secondary)
                         }
@@ -1563,9 +1563,9 @@ struct InGameSettingsSheet: View {
                         set: { world.setFPSLimit($0) }
                     )) {
                         Text("Unlimited").tag(0)
-                        Text("30 FPS (Stable)").tag(30)
+                        Text("30 FPS").tag(30)
                         Text("40 FPS").tag(40)
-                        Text("60 FPS (Smooth)").tag(60)
+                        Text("60 FPS (Default & Smooth)").tag(60)
                     } label: {
                         HStack {
                             Image(systemName: "speedometer")
@@ -1933,8 +1933,11 @@ struct VoxelSceneView: UIViewRepresentable {
         let targetFPS = (world.fpsLimit == 0) ? 0 : world.fpsLimit
         if uiView.preferredFramesPerSecond != targetFPS {
             uiView.preferredFramesPerSecond = targetFPS
-            uiView.antialiasingMode = world.isPerformanceStabilizationEnabled ? .none : .multisampling2X
             context.coordinator.updateFrameRate()
+        }
+        let expectedAntialiasing: SCNAntialiasingMode = world.isPerformanceStabilizationEnabled ? .none : .multisampling2X
+        if uiView.antialiasingMode != expectedAntialiasing {
+            uiView.antialiasingMode = expectedAntialiasing
         }
     }
 

@@ -10,6 +10,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [1.4.7] - 2026-10-18
+
+### Changed
+- **Performance Stabilization Defaults to 60 FPS**:
+  - Updated Performance Stabilization to target **60 FPS** by default (previously 30 FPS) while continuing to optimize render distance and chunk streaming.
+  - Set default `fpsLimit` to 60 and added automatic migration for existing saved settings.
+  - Updated the settings description and picker labels to reflect 60 FPS as the default smooth target.
+  - Independent synchronization for antialiasing mode and FPS limit in `updateUIView`.
+
+---
+
 ## [1.4.6] - 2026-10-18
 
 ### Changed
