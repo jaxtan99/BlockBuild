@@ -10,6 +10,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [1.4.0] - 2026-10-18
+
+### Added
+- **Configurable FPS Limit**: Added a dedicated FPS limit setting under Settings -> Display & Performance offering Unlimited, 30, 35, 40, 45, 50, 55, and 60 FPS options.
+- **Performance Stabilization Mode**: Renamed and upgraded the stabilization setting to "Performance Stabilization"; when enabled, automatically locks FPS to 40, sets render distance to 2 chunks, and applies movement and streaming optimizations for butter-smooth gameplay.
+
+### Changed
+- **Render Distance Limit (2 to 8 Chunks)**: Reduced maximum render distance limit from 16 to 8 chunks (20m to 80m view distance) to prevent out-of-memory crashes while maintaining distant scenery.
+- **Avatar Forward Alignment (Head & Torso)**: Wrapped player avatar limbs in an oriented container rotated 180° around the Y-axis so that both the head and torso face forward in the player's walk and look direction.
+- **Textured Shoulders Across All Skins**: Regenerated all 14 Minecraft skin PNG files with textured arm and shoulder tops, and added robust fallback color rendering in `SkinTextureManager` so shoulders are never transparent or missing.
+- **Corner-Only Roof Block Steps**: Refined roof block geometry so that the half-top quarter step triggers **only** at genuine orthogonal L-corners, leaving straight 1-row roof lines as clean, standard angled roof blocks.
+
+### Fixed
+- **Movement Lag Spikes**: Eliminated movement stutter by:
+  - Removing full world serialization from player movement coordinates so disk saves no longer fire periodically while simply walking or flying.
+  - Wrapping chunk loading and unloading in atomic `SCNTransaction` blocks.
+  - Restricting water seam updates to rendered block nodes rather than the full world dictionary.
+
+---
+
 ## [1.3.1] - 2026-10-18
 
 ### Changed

@@ -1446,17 +1446,38 @@ struct InGameSettingsSheet: View {
                 }
 
                 Section("Display & Performance") {
-                    Toggle(isOn: $world.isFpsStabilizationEnabled) {
+                    Toggle(isOn: $world.isPerformanceStabilizationEnabled) {
                         VStack(alignment: .leading, spacing: 3) {
                             HStack {
                                 Image(systemName: "gauge.with.dots.needle.bottom.50percent")
                                     .foregroundColor(.cyan)
-                                Text("FPS Stabilization")
+                                Text("Performance Stabilization")
                                     .font(.system(size: 13, weight: .bold, design: .monospaced))
                             }
-                            Text("Locks frame pacing to 60 FPS, smooths physics, and eliminates micro-stutters (Enabled by default)")
+                            Text("Locks FPS to 40, sets render distance to 2 chunks, and optimizes chunk streaming for smooth, lag-free gameplay.")
                                 .font(.system(size: 11, design: .monospaced))
                                 .foregroundColor(.secondary)
+                        }
+                    }
+
+                    Picker(selection: Binding(
+                        get: { world.fpsLimit },
+                        set: { world.setFPSLimit($0) }
+                    )) {
+                        Text("Unlimited").tag(0)
+                        Text("30 FPS").tag(30)
+                        Text("35 FPS").tag(35)
+                        Text("40 FPS (Stable)").tag(40)
+                        Text("45 FPS").tag(45)
+                        Text("50 FPS").tag(50)
+                        Text("55 FPS").tag(55)
+                        Text("60 FPS").tag(60)
+                    } label: {
+                        HStack {
+                            Image(systemName: "speedometer")
+                                .foregroundColor(.orange)
+                            Text("FPS Limit")
+                                .font(.system(size: 13, weight: .bold, design: .monospaced))
                         }
                     }
 
@@ -1476,7 +1497,7 @@ struct InGameSettingsSheet: View {
                                 get: { Double(world.renderDistance) },
                                 set: { world.setRenderDistance(Int($0)) }
                             ),
-                            in: 2...16,
+                            in: 2...8,
                             step: 1
                         )
                         HStack {
@@ -1484,7 +1505,7 @@ struct InGameSettingsSheet: View {
                                 .font(.system(size: 9, design: .monospaced))
                                 .foregroundColor(.secondary)
                             Spacer()
-                            Text("16 Chunks (Far)")
+                            Text("8 Chunks (Far)")
                                 .font(.system(size: 9, design: .monospaced))
                                 .foregroundColor(.secondary)
                         }
@@ -1720,8 +1741,8 @@ struct VoxelSceneView: UIViewRepresentable {
         scnView.autoenablesDefaultLighting = false
         scnView.allowsCameraControl = false
         scnView.isPlaying = true
-        scnView.preferredFramesPerSecond = world.isFpsStabilizationEnabled ? 60 : 120
-        scnView.antialiasingMode = world.isFpsStabilizationEnabled ? .none : .multisampling2X
+        scnView.preferredFramesPerSecond = (world.fpsLimit == 0) ? 0 : world.fpsLimit
+        scnView.antialiasingMode = world.isPerformanceStabilizationEnabled ? .none : .multisampling2X
 
         let panGesture = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePan(_:)))
         panGesture.maximumNumberOfTouches = 2
@@ -1739,10 +1760,11 @@ struct VoxelSceneView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: SCNView, context: Context) {
-        let targetFPS = world.isFpsStabilizationEnabled ? 60 : 120
+        let targetFPS = (world.fpsLimit == 0) ? 0 : world.fpsLimit
         if uiView.preferredFramesPerSecond != targetFPS {
             uiView.preferredFramesPerSecond = targetFPS
-            uiView.antialiasingMode = world.isFpsStabilizationEnabled ? .none : .multisampling2X
+            uiView.antialiasingMode = world.isPerformanceStabilizationEnabled ? .none : .multisampling2X
+            context.coordinator.updateFrameRate()
         }
     }
 
@@ -1762,6 +1784,21 @@ struct VoxelSceneView: UIViewRepresentable {
             let link = CADisplayLink(target: self, selector: #selector(stepFrame(_:)))
             link.add(to: .main, forMode: .common)
             displayLink = link
+            updateFrameRate()
+        }
+
+        func updateFrameRate() {
+            guard let link = displayLink else { return }
+            if #available(iOS 15.0, *) {
+                if world.fpsLimit > 0 {
+                    let rate = Float(world.fpsLimit)
+                    link.preferredFrameRateRange = CAFrameRateRange(minimum: rate, maximum: rate, preferred: rate)
+                } else {
+                    link.preferredFrameRateRange = .default
+                }
+            } else {
+                link.preferredFramesPerSecond = world.fpsLimit
+            }
         }
 
         @objc private func stepFrame(_ link: CADisplayLink) {

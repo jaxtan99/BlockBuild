@@ -907,10 +907,25 @@ final class VoxelWorld: NSObject, ObservableObject {
     private var dismissedPromptKeys: Set<String> = []
     private var remotePlayerSkins: [String: PlayerSkin] = [:]
 
-    // Performance & FPS Stabilization (Enabled by default)
-    @Published var isFpsStabilizationEnabled: Bool = true {
+    // Performance Stabilization & FPS Limit
+    @Published var isPerformanceStabilizationEnabled: Bool = true {
         didSet {
-            UserDefaults.standard.set(isFpsStabilizationEnabled, forKey: "blockbuild_fps_stabilization")
+            UserDefaults.standard.set(isPerformanceStabilizationEnabled, forKey: "blockbuild_performance_stabilization")
+            if isPerformanceStabilizationEnabled {
+                setFPSLimit(40)
+                setRenderDistance(2)
+            }
+        }
+    }
+    // Backward compatibility alias
+    var isFpsStabilizationEnabled: Bool {
+        get { isPerformanceStabilizationEnabled }
+        set { isPerformanceStabilizationEnabled = newValue }
+    }
+
+    @Published var fpsLimit: Int = 40 {
+        didSet {
+            UserDefaults.standard.set(fpsLimit, forKey: "blockbuild_fps_limit")
         }
     }
     private var crosshairRaycastSkip: Int = 0
@@ -996,8 +1011,10 @@ final class VoxelWorld: NSObject, ObservableObject {
             self.selectedSkin = skin
         }
         let savedDistance = UserDefaults.standard.integer(forKey: "blockbuild_render_distance")
-        if savedDistance >= 2 && savedDistance <= 16 {
+        if savedDistance >= 2 && savedDistance <= 8 {
             self.renderDistance = savedDistance
+        } else if savedDistance > 8 {
+            self.renderDistance = 8
         } else {
             self.renderDistance = 4
         }
@@ -1031,10 +1048,19 @@ final class VoxelWorld: NSObject, ObservableObject {
         }
         isInGame = false
 
-        if UserDefaults.standard.object(forKey: "blockbuild_fps_stabilization") != nil {
-            self.isFpsStabilizationEnabled = UserDefaults.standard.bool(forKey: "blockbuild_fps_stabilization")
+        if UserDefaults.standard.object(forKey: "blockbuild_performance_stabilization") != nil {
+            self.isPerformanceStabilizationEnabled = UserDefaults.standard.bool(forKey: "blockbuild_performance_stabilization")
+        } else if UserDefaults.standard.object(forKey: "blockbuild_fps_stabilization") != nil {
+            self.isPerformanceStabilizationEnabled = UserDefaults.standard.bool(forKey: "blockbuild_fps_stabilization")
         } else {
-            self.isFpsStabilizationEnabled = true
+            self.isPerformanceStabilizationEnabled = true
+        }
+
+        let savedFPS = UserDefaults.standard.integer(forKey: "blockbuild_fps_limit")
+        if [0, 30, 35, 40, 45, 50, 55, 60].contains(savedFPS) && UserDefaults.standard.object(forKey: "blockbuild_fps_limit") != nil {
+            self.fpsLimit = savedFPS
+        } else {
+            self.fpsLimit = self.isPerformanceStabilizationEnabled ? 40 : 60
         }
 
         if UserDefaults.standard.object(forKey: "blockbuild_multiplayer_enabled") != nil {
@@ -1202,9 +1228,16 @@ final class VoxelWorld: NSObject, ObservableObject {
     }
 
     func setRenderDistance(_ distance: Int) {
-        let clamped = max(2, min(16, distance))
+        let clamped = max(2, min(8, distance))
         guard clamped != renderDistance else { return }
         renderDistance = clamped
+    }
+
+    func setFPSLimit(_ limit: Int) {
+        let valid = [0, 30, 35, 40, 45, 50, 55, 60]
+        let chosen = valid.contains(limit) ? limit : 40
+        guard chosen != fpsLimit else { return }
+        fpsLimit = chosen
     }
 
     func applyRenderDistance() {
@@ -1527,6 +1560,9 @@ final class VoxelWorld: NSObject, ObservableObject {
             }
         }
 
+        SCNTransaction.begin()
+        SCNTransaction.animationDuration = 0
+
         let chunksToUnload = activeChunks.subtracting(desiredChunks)
         for c in chunksToUnload {
             if let cBlocks = chunkBlocks[c] {
@@ -1562,18 +1598,19 @@ final class VoxelWorld: NSObject, ObservableObject {
             }
         }
 
-        // Refresh existing water nodes when new chunks stream in so chunk borders never show internal water seams
+        // Refresh existing active water nodes when new chunks stream in
         if !chunksToLoad.isEmpty {
-            for (coord, type) in blocks where type == .water && blockNodes[coord] != nil {
+            for (coord, node) in blockNodes where blocks[coord] == .water {
                 if isBlockExposed(coord) {
-                    if let node = blockNodes[coord] {
-                        configureNode(node, for: coord, type: .water)
-                    }
-                } else if let node = blockNodes.removeValue(forKey: coord) {
+                    configureNode(node, for: coord, type: .water)
+                } else {
                     node.removeFromParentNode()
+                    blockNodes.removeValue(forKey: coord)
                 }
             }
         }
+
+        SCNTransaction.commit()
     }
 
     // MARK: - Slope-Seeking Lowering Water & Falling Sand Physics
@@ -2316,60 +2353,39 @@ final class VoxelWorld: NSObject, ObservableObject {
         let northRoofAdj = northRoof || (blocks[BlockCoord(x: coord.x, y: coord.y + 1, z: coord.z - 1)] == .roof) || (blocks[BlockCoord(x: coord.x, y: coord.y - 1, z: coord.z - 1)] == .roof)
         let southRoofAdj = southRoof || (blocks[BlockCoord(x: coord.x, y: coord.y + 1, z: coord.z + 1)] == .roof) || (blocks[BlockCoord(x: coord.x, y: coord.y - 1, z: coord.z + 1)] == .roof)
 
-        let upRoof = (blocks[BlockCoord(x: coord.x, y: coord.y + 1, z: coord.z)] == .roof)
-        let downRoof = (blocks[BlockCoord(x: coord.x, y: coord.y - 1, z: coord.z)] == .roof)
-
-        // Condition 1: Between roof blocks in 1 row along X
-        let betweenXRow = westRoofAdj && eastRoofAdj
-        // Condition 2: Between roof blocks in 1 row along Z
-        let betweenZRow = northRoofAdj && southRoofAdj
-        // Condition 3: Between orthogonal roof blocks (Corner)
-        let isCorner = (westRoofAdj || eastRoofAdj) && (northRoofAdj || southRoofAdj)
-        // Condition 4: Between sloped/vertical roof blocks
-        let isSlopedBetween = (westRoofAdj || eastRoofAdj || northRoofAdj || southRoofAdj) && (upRoof || downRoof)
-
-        // Must be between roof blocks (even if in 1 row)
-        guard betweenXRow || betweenZRow || isCorner || isSlopedBetween else {
+        // ONLY genuine corners: one neighbor along X axis AND one neighbor along Z axis
+        let hasXNeighbor = westRoofAdj || eastRoofAdj
+        let hasZNeighbor = northRoofAdj || southRoofAdj
+        guard hasXNeighbor && hasZNeighbor else {
             return nil
         }
 
+        // Straight continuous rows (e.g. west AND east without turning, or north AND south without turning) are not corners
+        let isStraightX = westRoofAdj && eastRoofAdj
+        let isStraightZ = northRoofAdj && southRoofAdj
+        if isStraightX && !isStraightZ { return nil }
+        if isStraightZ && !isStraightX { return nil }
+
         let dir = blockOrientations[coord] ?? 0
-        let stepX: Float
-        let stepZ: Float
-
-        if betweenXRow && !isCorner {
-            // Between a 1-row along X: place half-top step based on direction
-            stepZ = (dir == 2) ? 0.25 : -0.25
-            stepX = (dir == 1) ? 0.25 : (dir == 3 ? -0.25 : 0.25)
-        } else if betweenZRow && !isCorner {
-            // Between a 1-row along Z: place half-top step based on direction
-            stepX = (dir == 1) ? 0.25 : -0.25
-            stepZ = (dir == 2) ? 0.25 : (dir == 0 ? -0.25 : 0.25)
+        let xSign: Float
+        if eastRoofAdj && !westRoofAdj {
+            xSign = 1.0
+        } else if westRoofAdj && !eastRoofAdj {
+            xSign = -1.0
         } else {
-            // Corner or sloped intersection
-            let xSign: Float
-            if eastRoofAdj && !westRoofAdj {
-                xSign = 1.0
-            } else if westRoofAdj && !eastRoofAdj {
-                xSign = -1.0
-            } else {
-                xSign = (dir == 1) ? 1.0 : -1.0
-            }
-
-            let zSign: Float
-            if southRoofAdj && !northRoofAdj {
-                zSign = 1.0
-            } else if northRoofAdj && !southRoofAdj {
-                zSign = -1.0
-            } else {
-                zSign = (dir == 2) ? 1.0 : -1.0
-            }
-
-            stepX = xSign * 0.25
-            stepZ = zSign * 0.25
+            xSign = (dir == 1) ? 1.0 : -1.0
         }
 
-        return (stepX, stepZ)
+        let zSign: Float
+        if southRoofAdj && !northRoofAdj {
+            zSign = 1.0
+        } else if northRoofAdj && !southRoofAdj {
+            zSign = -1.0
+        } else {
+            zSign = (dir == 2) ? 1.0 : -1.0
+        }
+
+        return (stepX: xSign * 0.25, stepZ: zSign * 0.25)
     }
 
     private func configureNode(_ node: SCNNode, for coord: BlockCoord, type: BlockType) {
@@ -2947,7 +2963,7 @@ final class VoxelWorld: NSObject, ObservableObject {
     }
 
     func stepPhysics(dt: Float) {
-        let clampedDt = isFpsStabilizationEnabled ? min(dt, 1.0 / 60.0) : min(dt, 0.1)
+        let clampedDt = isPerformanceStabilizationEnabled ? min(dt, 1.0 / 40.0) : min(dt, 0.1)
         let mult = max(0.4, min(2.0, controlLayout.movementSpeedMultiplier))
         let baseWalkSpeed: Float = 2.75
         let baseFlySpeed: Float = 4.2
@@ -3016,10 +3032,6 @@ final class VoxelWorld: NSObject, ObservableObject {
         pos.x = max(-bound, min(bound, pos.x))
         pos.z = max(-bound, min(bound, pos.z))
         pos.y = max(0.5 + playerFeetOffset, min(42.0, pos.y))
-
-        if abs(pos.x - playerPosition.x) > 0.01 || abs(pos.y - playerPosition.y) > 0.01 || abs(pos.z - playerPosition.z) > 0.01 {
-            hasUnsavedChanges = true
-        }
 
         playerPosition = pos
         updateCameraTransform()
@@ -3671,45 +3683,50 @@ final class VoxelWorld: NSObject, ObservableObject {
         let root = SCNNode()
         let mgr = SkinTextureManager.shared
 
+        // Container node for the entire body, rotated 180° around Y so that front of head and torso face forward (-Z look direction)
+        let bodyNode = SCNNode()
+        bodyNode.eulerAngles = SCNVector3(0, Float.pi, 0)
+        root.addChildNode(bodyNode)
+
         // 1. Legs (Left & Right standard Minecraft limbs)
         let leftLegGeo = SCNBox(width: 0.22, height: 0.65, length: 0.22, chamferRadius: 0.0)
         leftLegGeo.materials = mgr.leftLegMaterials(for: skin)
         let leftLegNode = SCNNode(geometry: leftLegGeo)
         leftLegNode.position = SCNVector3(-0.13, 0.325, 0)
-        root.addChildNode(leftLegNode)
+        bodyNode.addChildNode(leftLegNode)
 
         let rightLegGeo = SCNBox(width: 0.22, height: 0.65, length: 0.22, chamferRadius: 0.0)
         rightLegGeo.materials = mgr.rightLegMaterials(for: skin)
         let rightLegNode = SCNNode(geometry: rightLegGeo)
         rightLegNode.position = SCNVector3(0.13, 0.325, 0)
-        root.addChildNode(rightLegNode)
+        bodyNode.addChildNode(rightLegNode)
 
         // 2. Torso
         let torsoGeo = SCNBox(width: 0.50, height: 0.65, length: 0.25, chamferRadius: 0.0)
         torsoGeo.materials = mgr.torsoMaterials(for: skin)
         let torsoNode = SCNNode(geometry: torsoGeo)
         torsoNode.position = SCNVector3(0, 0.975, 0)
-        root.addChildNode(torsoNode)
+        bodyNode.addChildNode(torsoNode)
 
         // 3. Arms (Left & Right)
         let leftArmGeo = SCNBox(width: 0.22, height: 0.65, length: 0.22, chamferRadius: 0.0)
         leftArmGeo.materials = mgr.leftArmMaterials(for: skin)
         let leftArmNode = SCNNode(geometry: leftArmGeo)
         leftArmNode.position = SCNVector3(-0.36, 0.975, 0)
-        root.addChildNode(leftArmNode)
+        bodyNode.addChildNode(leftArmNode)
 
         let rightArmGeo = SCNBox(width: 0.22, height: 0.65, length: 0.22, chamferRadius: 0.0)
         rightArmGeo.materials = mgr.rightArmMaterials(for: skin)
         let rightArmNode = SCNNode(geometry: rightArmGeo)
         rightArmNode.position = SCNVector3(0.36, 0.975, 0)
-        root.addChildNode(rightArmNode)
+        bodyNode.addChildNode(rightArmNode)
 
         // 4. Head
         let headGeo = SCNBox(width: 0.50, height: 0.50, length: 0.50, chamferRadius: 0.0)
         headGeo.materials = mgr.headMaterials(for: skin)
         let headNode = SCNNode(geometry: headGeo)
         headNode.position = SCNVector3(0, 1.55, 0)
-        root.addChildNode(headNode)
+        bodyNode.addChildNode(headNode)
 
         // 5. 3D Billboard Floating Name Tag (User Name Directly On Top Of Player Head)
         let tagText = name
@@ -3782,12 +3799,19 @@ final class SkinTextureManager: @unchecked Sendable {
         return fallback
     }
 
-    private func cropFace(from cg: CGImage, x: Int, y: Int, w: Int, h: Int) -> UIImage {
+    private func cropFace(from cg: CGImage, x: Int, y: Int, w: Int, h: Int, fallbackColor: UIColor = .clear) -> UIImage {
         let rect = CGRect(x: x, y: y, width: w, height: h)
-        if let cropped = cg.cropping(to: rect) {
-            return UIImage(cgImage: cropped)
+        let croppedImage: UIImage? = cg.cropping(to: rect).map { UIImage(cgImage: $0) }
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0
+        format.opaque = true
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: w, height: h), format: format)
+        return renderer.image { ctx in
+            fallbackColor.setFill()
+            ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
+            croppedImage?.draw(in: CGRect(x: 0, y: 0, width: w, height: h))
         }
-        return UIImage()
     }
 
     private func makePixelMat(from image: UIImage) -> SCNMaterial {
@@ -3806,12 +3830,12 @@ final class SkinTextureManager: @unchecked Sendable {
         let img = skinImage(for: skin)
         guard let cg = img.cgImage else { return [] }
         // SCNBox materials: 0:Front, 1:Right, 2:Back, 3:Left, 4:Top, 5:Bottom
-        let front = makePixelMat(from: cropFace(from: cg, x: 8, y: 8, w: 8, h: 8))
-        let right = makePixelMat(from: cropFace(from: cg, x: 0, y: 8, w: 8, h: 8))
-        let back = makePixelMat(from: cropFace(from: cg, x: 24, y: 8, w: 8, h: 8))
-        let left = makePixelMat(from: cropFace(from: cg, x: 16, y: 8, w: 8, h: 8))
-        let top = makePixelMat(from: cropFace(from: cg, x: 8, y: 0, w: 8, h: 8))
-        let bottom = makePixelMat(from: cropFace(from: cg, x: 16, y: 0, w: 8, h: 8))
+        let front = makePixelMat(from: cropFace(from: cg, x: 8, y: 8, w: 8, h: 8, fallbackColor: skin.headColor))
+        let right = makePixelMat(from: cropFace(from: cg, x: 0, y: 8, w: 8, h: 8, fallbackColor: skin.hairColor))
+        let back = makePixelMat(from: cropFace(from: cg, x: 24, y: 8, w: 8, h: 8, fallbackColor: skin.hairColor))
+        let left = makePixelMat(from: cropFace(from: cg, x: 16, y: 8, w: 8, h: 8, fallbackColor: skin.hairColor))
+        let top = makePixelMat(from: cropFace(from: cg, x: 8, y: 0, w: 8, h: 8, fallbackColor: skin.hairColor))
+        let bottom = makePixelMat(from: cropFace(from: cg, x: 16, y: 0, w: 8, h: 8, fallbackColor: skin.headColor))
         let mats = [front, right, back, left, top, bottom]
         headMaterialsCache[skin] = mats
         return mats
@@ -3821,12 +3845,12 @@ final class SkinTextureManager: @unchecked Sendable {
         if let cached = torsoMaterialsCache[skin] { return cached }
         let img = skinImage(for: skin)
         guard let cg = img.cgImage else { return [] }
-        let front = makePixelMat(from: cropFace(from: cg, x: 20, y: 20, w: 8, h: 12))
-        let right = makePixelMat(from: cropFace(from: cg, x: 16, y: 20, w: 4, h: 12))
-        let back = makePixelMat(from: cropFace(from: cg, x: 32, y: 20, w: 8, h: 12))
-        let left = makePixelMat(from: cropFace(from: cg, x: 28, y: 20, w: 4, h: 12))
-        let top = makePixelMat(from: cropFace(from: cg, x: 20, y: 16, w: 8, h: 4))
-        let bottom = makePixelMat(from: cropFace(from: cg, x: 28, y: 16, w: 8, h: 4))
+        let front = makePixelMat(from: cropFace(from: cg, x: 20, y: 20, w: 8, h: 12, fallbackColor: skin.torsoColor))
+        let right = makePixelMat(from: cropFace(from: cg, x: 16, y: 20, w: 4, h: 12, fallbackColor: skin.torsoColor))
+        let back = makePixelMat(from: cropFace(from: cg, x: 32, y: 20, w: 8, h: 12, fallbackColor: skin.torsoColor))
+        let left = makePixelMat(from: cropFace(from: cg, x: 28, y: 20, w: 4, h: 12, fallbackColor: skin.torsoColor))
+        let top = makePixelMat(from: cropFace(from: cg, x: 20, y: 16, w: 8, h: 4, fallbackColor: skin.torsoColor))
+        let bottom = makePixelMat(from: cropFace(from: cg, x: 28, y: 16, w: 8, h: 4, fallbackColor: skin.torsoColor))
         let mats = [front, right, back, left, top, bottom]
         torsoMaterialsCache[skin] = mats
         return mats
@@ -3836,12 +3860,13 @@ final class SkinTextureManager: @unchecked Sendable {
         if let cached = rightArmMaterialsCache[skin] { return cached }
         let img = skinImage(for: skin)
         guard let cg = img.cgImage else { return [] }
-        let front = makePixelMat(from: cropFace(from: cg, x: 44, y: 20, w: 4, h: 12))
-        let right = makePixelMat(from: cropFace(from: cg, x: 40, y: 20, w: 4, h: 12))
-        let back = makePixelMat(from: cropFace(from: cg, x: 52, y: 20, w: 4, h: 12))
-        let left = makePixelMat(from: cropFace(from: cg, x: 48, y: 20, w: 4, h: 12))
-        let top = makePixelMat(from: cropFace(from: cg, x: 44, y: 16, w: 4, h: 4))
-        let bottom = makePixelMat(from: cropFace(from: cg, x: 48, y: 16, w: 4, h: 4))
+        let front = makePixelMat(from: cropFace(from: cg, x: 44, y: 20, w: 4, h: 12, fallbackColor: skin.torsoColor))
+        let right = makePixelMat(from: cropFace(from: cg, x: 40, y: 20, w: 4, h: 12, fallbackColor: skin.torsoColor))
+        let back = makePixelMat(from: cropFace(from: cg, x: 52, y: 20, w: 4, h: 12, fallbackColor: skin.torsoColor))
+        let left = makePixelMat(from: cropFace(from: cg, x: 48, y: 20, w: 4, h: 12, fallbackColor: skin.torsoColor))
+        // Shoulder top face (index 4)
+        let top = makePixelMat(from: cropFace(from: cg, x: 44, y: 16, w: 4, h: 4, fallbackColor: skin.torsoColor))
+        let bottom = makePixelMat(from: cropFace(from: cg, x: 48, y: 16, w: 4, h: 4, fallbackColor: skin.headColor))
         let mats = [front, right, back, left, top, bottom]
         rightArmMaterialsCache[skin] = mats
         return mats
@@ -3851,12 +3876,13 @@ final class SkinTextureManager: @unchecked Sendable {
         if let cached = leftArmMaterialsCache[skin] { return cached }
         let img = skinImage(for: skin)
         guard let cg = img.cgImage else { return [] }
-        let front = makePixelMat(from: cropFace(from: cg, x: 36, y: 52, w: 4, h: 12))
-        let right = makePixelMat(from: cropFace(from: cg, x: 32, y: 52, w: 4, h: 12))
-        let back = makePixelMat(from: cropFace(from: cg, x: 44, y: 52, w: 4, h: 12))
-        let left = makePixelMat(from: cropFace(from: cg, x: 40, y: 52, w: 4, h: 12))
-        let top = makePixelMat(from: cropFace(from: cg, x: 36, y: 48, w: 4, h: 4))
-        let bottom = makePixelMat(from: cropFace(from: cg, x: 40, y: 48, w: 4, h: 4))
+        let front = makePixelMat(from: cropFace(from: cg, x: 36, y: 52, w: 4, h: 12, fallbackColor: skin.torsoColor))
+        let right = makePixelMat(from: cropFace(from: cg, x: 32, y: 52, w: 4, h: 12, fallbackColor: skin.torsoColor))
+        let back = makePixelMat(from: cropFace(from: cg, x: 44, y: 52, w: 4, h: 12, fallbackColor: skin.torsoColor))
+        let left = makePixelMat(from: cropFace(from: cg, x: 40, y: 52, w: 4, h: 12, fallbackColor: skin.torsoColor))
+        // Shoulder top face (index 4)
+        let top = makePixelMat(from: cropFace(from: cg, x: 36, y: 48, w: 4, h: 4, fallbackColor: skin.torsoColor))
+        let bottom = makePixelMat(from: cropFace(from: cg, x: 40, y: 48, w: 4, h: 4, fallbackColor: skin.headColor))
         let mats = [front, right, back, left, top, bottom]
         leftArmMaterialsCache[skin] = mats
         return mats
