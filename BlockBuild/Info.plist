@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_blockbuild._tcp</string>
+		<string>_blockbuild._udp</string>
+	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>BlockBuild uses your local network so nearby players can join and build together in your world.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>BlockBuild uses Bluetooth for local peer-to-peer multiplayer.</string>
+</dict>
+</plist>

@@ -250,21 +250,23 @@ struct SavedBlockDelta: Codable {
     let x: Int
     let y: Int
     let z: Int
-    let typeRaw: Int // -1 means broken (air), 0...11 means BlockType.rawValue
+    let typeRaw: Int // -1 means broken (air), 0...12 means BlockType.rawValue
     let waterLevel: Int? // Optional flowing water height level (1..4)
     let isOpen: Bool? // Optional open/closed state for doors & trapdoors
+    let direction: Int? // Optional orientation for directional blocks (e.g. roof 0..3)
 
     enum CodingKeys: String, CodingKey {
-        case x, y, z, typeRaw, waterLevel, isOpen
+        case x, y, z, typeRaw, waterLevel, isOpen, direction
     }
 
-    init(x: Int, y: Int, z: Int, typeRaw: Int, waterLevel: Int? = nil, isOpen: Bool? = nil) {
+    init(x: Int, y: Int, z: Int, typeRaw: Int, waterLevel: Int? = nil, isOpen: Bool? = nil, direction: Int? = nil) {
         self.x = x
         self.y = y
         self.z = z
         self.typeRaw = typeRaw
         self.waterLevel = waterLevel
         self.isOpen = isOpen
+        self.direction = direction
     }
 
     init(from decoder: Decoder) throws {
@@ -275,6 +277,7 @@ struct SavedBlockDelta: Codable {
         self.typeRaw = (try? c.decode(Int.self, forKey: .typeRaw)) ?? -1
         self.waterLevel = try? c.decode(Int.self, forKey: .waterLevel)
         self.isOpen = try? c.decode(Bool.self, forKey: .isOpen)
+        self.direction = try? c.decode(Int.self, forKey: .direction)
     }
 }
 
@@ -282,7 +285,7 @@ struct SavedChunkData: Codable {
     let cx: Int
     let cz: Int
     // Packed 4 ints per block: [x, y, z, encodedState]
-    // where encodedState = (typeRaw & 0xFF) | ((waterLevel & 0xF) << 8) | ((isOpen ? 1 : 0) << 12)
+    // where encodedState = (typeRaw & 0xFF) | ((waterLevel & 0xF) << 8) | ((isOpen ? 1 : 0) << 12) | ((direction & 0x3) << 14)
     let packedBlocks: [Int]
 
     enum CodingKeys: String, CodingKey {
@@ -423,9 +426,247 @@ struct ControlLayoutConfig: Codable, Equatable {
     var hotbarScale: CGFloat = 1.0
     var controlOpacity: Double = 0.92
     var lookSensitivity: Float = 1.0
+    var movementSpeedMultiplier: Float = 1.0
     var swapLeftRight: Bool = false
 
     static let `default` = ControlLayoutConfig()
+}
+
+// MARK: - Player Character Skins (Multiplayer & Avatar Customization)
+
+enum SkinFeatureStyle {
+    case classic
+    case visor
+    case cybernetic
+    case minerLamp
+    case spaceVisor
+    case wizardPoint
+    case ninjaMask
+    case horns
+    case furHood
+}
+
+enum PlayerSkin: String, CaseIterable, Codable, Identifiable {
+    case steve = "Steve"
+    case alex = "Alex"
+    case knight = "Knight"
+    case robot = "Robot"
+    case miner = "Miner"
+    case astronaut = "Astronaut"
+    case wizard = "Wizard"
+    case zombie = "Zombie"
+    case ninja = "Ninja"
+    case pirate = "Pirate"
+    case viking = "Viking"
+    case cyborg = "Cyborg"
+    case nether = "Nether"
+    case arctic = "Arctic"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .steve: return "Classic Steve"
+        case .alex: return "Alex"
+        case .knight: return "Iron Knight"
+        case .robot: return "Cyber Robot"
+        case .miner: return "Cave Miner"
+        case .astronaut: return "Astronaut"
+        case .wizard: return "Mystic Mage"
+        case .zombie: return "Zombie"
+        case .ninja: return "Shadow Ninja"
+        case .pirate: return "Sea Pirate"
+        case .viking: return "Nordic Viking"
+        case .cyborg: return "Cyberpunk"
+        case .nether: return "Nether Lord"
+        case .arctic: return "Arctic Ranger"
+        }
+    }
+
+    var roleSubtitle: String {
+        switch self {
+        case .steve: return "Iconic Builder"
+        case .alex: return "Wilderness Scout"
+        case .knight: return "Steel Defender"
+        case .robot: return "Android Unit"
+        case .miner: return "Deep Spelunker"
+        case .astronaut: return "Space Explorer"
+        case .wizard: return "Spell Caster"
+        case .zombie: return "Undead Walker"
+        case .ninja: return "Stealth Assassin"
+        case .pirate: return "Ocean Raider"
+        case .viking: return "Fierce Warrior"
+        case .cyborg: return "Neon Mercenary"
+        case .nether: return "Infernal Guardian"
+        case .arctic: return "Frozen Pioneer"
+        }
+    }
+
+    var headColor: UIColor {
+        switch self {
+        case .steve: return UIColor(red: 0.85, green: 0.65, blue: 0.50, alpha: 1.0)
+        case .alex: return UIColor(red: 0.92, green: 0.72, blue: 0.58, alpha: 1.0)
+        case .knight: return UIColor(red: 0.75, green: 0.75, blue: 0.80, alpha: 1.0)
+        case .robot: return UIColor(red: 0.35, green: 0.38, blue: 0.45, alpha: 1.0)
+        case .miner: return UIColor(red: 0.88, green: 0.68, blue: 0.52, alpha: 1.0)
+        case .astronaut: return UIColor(red: 0.96, green: 0.78, blue: 0.18, alpha: 1.0)
+        case .wizard: return UIColor(red: 0.86, green: 0.78, blue: 0.72, alpha: 1.0)
+        case .zombie: return UIColor(red: 0.32, green: 0.58, blue: 0.28, alpha: 1.0)
+        case .ninja: return UIColor(red: 0.14, green: 0.14, blue: 0.17, alpha: 1.0)
+        case .pirate: return UIColor(red: 0.82, green: 0.62, blue: 0.48, alpha: 1.0)
+        case .viking: return UIColor(red: 0.86, green: 0.66, blue: 0.52, alpha: 1.0)
+        case .cyborg: return UIColor(red: 0.84, green: 0.74, blue: 0.70, alpha: 1.0)
+        case .nether: return UIColor(red: 0.16, green: 0.14, blue: 0.16, alpha: 1.0)
+        case .arctic: return UIColor(red: 0.88, green: 0.75, blue: 0.68, alpha: 1.0)
+        }
+    }
+
+    var hairColor: UIColor {
+        switch self {
+        case .steve: return UIColor(red: 0.28, green: 0.16, blue: 0.08, alpha: 1.0)
+        case .alex: return UIColor(red: 0.85, green: 0.45, blue: 0.15, alpha: 1.0)
+        case .knight: return UIColor(red: 0.55, green: 0.56, blue: 0.62, alpha: 1.0)
+        case .robot: return UIColor(red: 0.22, green: 0.24, blue: 0.28, alpha: 1.0)
+        case .miner: return UIColor(red: 0.98, green: 0.82, blue: 0.15, alpha: 1.0)
+        case .astronaut: return UIColor(red: 0.95, green: 0.95, blue: 0.98, alpha: 1.0)
+        case .wizard: return UIColor(red: 0.38, green: 0.18, blue: 0.62, alpha: 1.0)
+        case .zombie: return UIColor(red: 0.20, green: 0.36, blue: 0.18, alpha: 1.0)
+        case .ninja: return UIColor(red: 0.88, green: 0.15, blue: 0.20, alpha: 1.0)
+        case .pirate: return UIColor(red: 0.12, green: 0.12, blue: 0.14, alpha: 1.0)
+        case .viking: return UIColor(red: 0.78, green: 0.32, blue: 0.12, alpha: 1.0)
+        case .cyborg: return UIColor(red: 0.10, green: 0.90, blue: 0.85, alpha: 1.0)
+        case .nether: return UIColor(red: 0.95, green: 0.30, blue: 0.10, alpha: 1.0)
+        case .arctic: return UIColor(red: 0.94, green: 0.94, blue: 0.96, alpha: 1.0)
+        }
+    }
+
+    var torsoColor: UIColor {
+        switch self {
+        case .steve: return UIColor(red: 0.15, green: 0.68, blue: 0.72, alpha: 1.0)
+        case .alex: return UIColor(red: 0.35, green: 0.58, blue: 0.25, alpha: 1.0)
+        case .knight: return UIColor(red: 0.68, green: 0.70, blue: 0.75, alpha: 1.0)
+        case .robot: return UIColor(red: 0.20, green: 0.22, blue: 0.28, alpha: 1.0)
+        case .miner: return UIColor(red: 0.96, green: 0.45, blue: 0.10, alpha: 1.0)
+        case .astronaut: return UIColor(red: 0.92, green: 0.92, blue: 0.95, alpha: 1.0)
+        case .wizard: return UIColor(red: 0.45, green: 0.15, blue: 0.65, alpha: 1.0)
+        case .zombie: return UIColor(red: 0.15, green: 0.55, blue: 0.60, alpha: 1.0)
+        case .ninja: return UIColor(red: 0.18, green: 0.18, blue: 0.22, alpha: 1.0)
+        case .pirate: return UIColor(red: 0.70, green: 0.15, blue: 0.15, alpha: 1.0)
+        case .viking: return UIColor(red: 0.45, green: 0.32, blue: 0.20, alpha: 1.0)
+        case .cyborg: return UIColor(red: 0.14, green: 0.15, blue: 0.20, alpha: 1.0)
+        case .nether: return UIColor(red: 0.22, green: 0.14, blue: 0.16, alpha: 1.0)
+        case .arctic: return UIColor(red: 0.35, green: 0.48, blue: 0.52, alpha: 1.0)
+        }
+    }
+
+    var legsColor: UIColor {
+        switch self {
+        case .steve: return UIColor(red: 0.20, green: 0.28, blue: 0.68, alpha: 1.0)
+        case .alex: return UIColor(red: 0.42, green: 0.30, blue: 0.18, alpha: 1.0)
+        case .knight: return UIColor(red: 0.48, green: 0.50, blue: 0.55, alpha: 1.0)
+        case .robot: return UIColor(red: 0.15, green: 0.16, blue: 0.20, alpha: 1.0)
+        case .miner: return UIColor(red: 0.18, green: 0.24, blue: 0.38, alpha: 1.0)
+        case .astronaut: return UIColor(red: 0.85, green: 0.85, blue: 0.88, alpha: 1.0)
+        case .wizard: return UIColor(red: 0.25, green: 0.10, blue: 0.40, alpha: 1.0)
+        case .zombie: return UIColor(red: 0.22, green: 0.20, blue: 0.45, alpha: 1.0)
+        case .ninja: return UIColor(red: 0.14, green: 0.14, blue: 0.18, alpha: 1.0)
+        case .pirate: return UIColor(red: 0.20, green: 0.22, blue: 0.28, alpha: 1.0)
+        case .viking: return UIColor(red: 0.32, green: 0.28, blue: 0.24, alpha: 1.0)
+        case .cyborg: return UIColor(red: 0.18, green: 0.20, blue: 0.26, alpha: 1.0)
+        case .nether: return UIColor(red: 0.18, green: 0.16, blue: 0.18, alpha: 1.0)
+        case .arctic: return UIColor(red: 0.28, green: 0.36, blue: 0.40, alpha: 1.0)
+        }
+    }
+
+    var bootsColor: UIColor {
+        switch self {
+        case .steve: return UIColor(red: 0.30, green: 0.30, blue: 0.35, alpha: 1.0)
+        case .alex: return UIColor(red: 0.25, green: 0.18, blue: 0.10, alpha: 1.0)
+        case .knight: return UIColor(red: 0.35, green: 0.36, blue: 0.40, alpha: 1.0)
+        case .robot: return UIColor(red: 0.10, green: 0.12, blue: 0.15, alpha: 1.0)
+        case .miner: return UIColor(red: 0.25, green: 0.18, blue: 0.12, alpha: 1.0)
+        case .astronaut: return UIColor(red: 0.38, green: 0.40, blue: 0.45, alpha: 1.0)
+        case .wizard: return UIColor(red: 0.18, green: 0.08, blue: 0.28, alpha: 1.0)
+        case .zombie: return UIColor(red: 0.20, green: 0.22, blue: 0.18, alpha: 1.0)
+        case .ninja: return UIColor(red: 0.08, green: 0.08, blue: 0.10, alpha: 1.0)
+        case .pirate: return UIColor(red: 0.15, green: 0.12, blue: 0.10, alpha: 1.0)
+        case .viking: return UIColor(red: 0.22, green: 0.16, blue: 0.12, alpha: 1.0)
+        case .cyborg: return UIColor(red: 0.10, green: 0.10, blue: 0.12, alpha: 1.0)
+        case .nether: return UIColor(red: 0.12, green: 0.10, blue: 0.12, alpha: 1.0)
+        case .arctic: return UIColor(red: 0.15, green: 0.18, blue: 0.22, alpha: 1.0)
+        }
+    }
+
+    var accentColor: UIColor {
+        switch self {
+        case .steve: return UIColor(red: 0.45, green: 0.30, blue: 0.18, alpha: 1.0)
+        case .alex: return UIColor(red: 0.85, green: 0.45, blue: 0.15, alpha: 1.0)
+        case .knight: return UIColor(red: 0.95, green: 0.82, blue: 0.25, alpha: 1.0)
+        case .robot: return UIColor(red: 0.10, green: 0.95, blue: 0.95, alpha: 1.0)
+        case .miner: return UIColor(red: 1.0, green: 0.98, blue: 0.40, alpha: 1.0)
+        case .astronaut: return UIColor(red: 0.20, green: 0.70, blue: 0.95, alpha: 1.0)
+        case .wizard: return UIColor(red: 0.95, green: 0.85, blue: 0.30, alpha: 1.0)
+        case .zombie: return UIColor(red: 0.25, green: 0.48, blue: 0.22, alpha: 1.0)
+        case .ninja: return UIColor(red: 0.90, green: 0.18, blue: 0.22, alpha: 1.0)
+        case .pirate: return UIColor(red: 0.95, green: 0.78, blue: 0.22, alpha: 1.0)
+        case .viking: return UIColor(red: 0.72, green: 0.74, blue: 0.78, alpha: 1.0)
+        case .cyborg: return UIColor(red: 1.0, green: 0.15, blue: 0.65, alpha: 1.0)
+        case .nether: return UIColor(red: 1.0, green: 0.50, blue: 0.05, alpha: 1.0)
+        case .arctic: return UIColor(red: 1.0, green: 0.65, blue: 0.10, alpha: 1.0)
+        }
+    }
+
+    var eyeColor: UIColor {
+        switch self {
+        case .steve: return UIColor(red: 0.20, green: 0.40, blue: 0.85, alpha: 1.0)
+        case .alex: return UIColor(red: 0.15, green: 0.65, blue: 0.25, alpha: 1.0)
+        case .knight: return UIColor(red: 1.0, green: 0.85, blue: 0.20, alpha: 1.0)
+        case .robot: return UIColor(red: 0.10, green: 0.95, blue: 0.95, alpha: 1.0)
+        case .miner: return UIColor(red: 0.25, green: 0.20, blue: 0.15, alpha: 1.0)
+        case .astronaut: return UIColor(red: 0.98, green: 0.85, blue: 0.25, alpha: 1.0)
+        case .wizard: return UIColor(red: 0.85, green: 0.45, blue: 1.0, alpha: 1.0)
+        case .zombie: return UIColor(red: 0.85, green: 0.20, blue: 0.15, alpha: 1.0)
+        case .ninja: return UIColor(red: 0.98, green: 0.98, blue: 1.0, alpha: 1.0)
+        case .pirate: return UIColor(red: 0.25, green: 0.60, blue: 0.85, alpha: 1.0)
+        case .viking: return UIColor(red: 0.40, green: 0.80, blue: 1.0, alpha: 1.0)
+        case .cyborg: return UIColor(red: 1.0, green: 0.10, blue: 0.60, alpha: 1.0)
+        case .nether: return UIColor(red: 1.0, green: 0.85, blue: 0.10, alpha: 1.0)
+        case .arctic: return UIColor(red: 1.0, green: 0.70, blue: 0.15, alpha: 1.0)
+        }
+    }
+
+    var featureStyle: SkinFeatureStyle {
+        switch self {
+        case .steve, .alex, .zombie:
+            return .classic
+        case .knight:
+            return .visor
+        case .robot, .cyborg:
+            return .cybernetic
+        case .miner:
+            return .minerLamp
+        case .astronaut:
+            return .spaceVisor
+        case .wizard:
+            return .wizardPoint
+        case .ninja:
+            return .ninjaMask
+        case .pirate:
+            return .classic
+        case .viking, .nether:
+            return .horns
+        case .arctic:
+            return .furHood
+        }
+    }
+
+    var hasEyepatch: Bool {
+        return self == .pirate
+    }
+
+    var hasBackpack: Bool {
+        return self == .astronaut || self == .miner || self == .arctic
+    }
 }
 
 // MARK: - Local Multiplayer Packet Protocol
@@ -436,10 +677,12 @@ struct MultiplayerPacket: Codable {
         case requestSnapshot
         case blockUpdate
         case playerPose
+        case playerLeft
     }
 
     var kind: Kind
     var senderName: String
+    var skinRaw: String?
     // World Snapshot fields
     var worldID: UUID?
     var worldName: String?
@@ -459,6 +702,22 @@ struct DiscoveredLocalHost: Identifiable, Equatable {
     let id: String
     let peerID: MCPeerID
     let worldName: String
+    let playerName: String
+    let skin: PlayerSkin
+    let isInGame: Bool
+
+    static func == (lhs: DiscoveredLocalHost, rhs: DiscoveredLocalHost) -> Bool {
+        lhs.id == rhs.id && lhs.worldName == rhs.worldName && lhs.isInGame == rhs.isInGame
+    }
+}
+
+struct MultiplayerJoinPrompt: Identifiable {
+    let id = UUID()
+    let peerID: MCPeerID
+    let playerName: String
+    let worldName: String
+    let isDirectInvitation: Bool
+    var invitationHandler: ((Bool, MCSession?) -> Void)? = nil
 }
 
 enum WorldArchetype: Int, CaseIterable {
@@ -588,7 +847,8 @@ final class VoxelWorld: NSObject, ObservableObject {
         .sand: 20,
         .glass: 20,
         .door: 10,
-        .trapdoor: 10,
+        .roof: 20,
+        .slab: 20,
         .water: 15
     ]
     @Published var targetedBlockType: BlockType? = nil
@@ -605,11 +865,32 @@ final class VoxelWorld: NSObject, ObservableObject {
     }
     @Published var isEditingControls: Bool = false
 
-    // Local Multiplayer State
-    @Published var localPlayerName: String = UIDevice.current.name
+    // Navigation state: Main Menu vs Active Gameplay
+    @Published var isInGame: Bool = false
+    @Published var selectedSkin: PlayerSkin = .steve
+
+    // Local Multiplayer State (Enabled by default, continuously signals nearby players)
+    @Published var isMultiplayerEnabled: Bool = true {
+        didSet {
+            UserDefaults.standard.set(isMultiplayerEnabled, forKey: "blockbuild_multiplayer_enabled")
+        }
+    }
+    @Published var localPlayerName: String = ""
     @Published var isHostingMultiplayer: Bool = true
     @Published var connectedPlayerNames: [String] = []
     @Published var discoveredHosts: [DiscoveredLocalHost] = []
+    @Published var activeJoinPrompt: MultiplayerJoinPrompt? = nil
+    private var dismissedPromptKeys: Set<String> = []
+    private var remotePlayerSkins: [String: PlayerSkin] = [:]
+
+    // Performance & FPS Stabilization (Enabled by default)
+    @Published var isFpsStabilizationEnabled: Bool = true {
+        didSet {
+            UserDefaults.standard.set(isFpsStabilizationEnabled, forKey: "blockbuild_fps_stabilization")
+        }
+    }
+    private var crosshairRaycastSkip: Int = 0
+    private var coordTextTimeAccumulator: Float = 0
 
     // Player 3D AABB Hitbox dimensions (relative to camera eye position)
     private let playerRadius: Float = 0.32
@@ -628,16 +909,19 @@ final class VoxelWorld: NSObject, ObservableObject {
     private var activeChunks: Set<ChunkCoord> = []
     private var chunkBlocks: [ChunkCoord: [BlockCoord: BlockType]] = [:]
     private var blocks: [BlockCoord: BlockType] = [:]
-    private var modifiedBlocks: [BlockCoord: Int] = [:] // -1 = air, 0..11 = BlockType
-    private var openToggleBlocks: Set<BlockCoord> = [] // Open doors and trapdoors
+    private var modifiedBlocks: [BlockCoord: Int] = [:] // -1 = air, 0..12 = BlockType
+    private var openToggleBlocks: Set<BlockCoord> = [] // Open doors
+    private var blockOrientations: [BlockCoord: Int] = [:] // 0: North (-Z), 1: East (+X), 2: South (+Z), 3: West (-X)
     private var blockNodes: [BlockCoord: SCNNode] = [:]
     private var sharedGeometries: [BlockType: SCNBox] = [:]
     private var waterLevelGeometries: [Int: SCNBox] = [:] // Levels 1..4 with lowering heights
     private var waterMaskedGeometries: [Int: SCNBox] = [:] // Key: (level << 6) | 6-bit face visibility mask
     private var doorClosedGeo = SCNBox()
     private var doorOpenGeo = SCNBox()
-    private var trapdoorClosedGeo = SCNBox()
-    private var trapdoorOpenGeo = SCNBox()
+    private var roofBaseGeo = SCNBox()
+    private var roofStepGeo = SCNBox()
+    private var roofCornerStepGeo = SCNBox()
+    private var slabGeo = SCNBox()
     private var lastPlayerChunk: ChunkCoord? = nil
 
     // Noise generators for current seed
@@ -648,6 +932,7 @@ final class VoxelWorld: NSObject, ObservableObject {
 
     // Water Flow & Falling Sand Simulation Queues
     private var waterSpreadLevels: [BlockCoord: Int] = [:] // 4 = full height, 3..1 = lowering height toward lowest spot
+    private var waterSourceBlocks: Set<BlockCoord> = [] // Uncut source blocks (bucket-placed springs and natural basin water)
     private var activeWaterFrontier: Set<BlockCoord> = []
     private var activeSandBlocks: Set<BlockCoord> = []
     private var waterTickAccumulator: Float = 0.0
@@ -682,14 +967,18 @@ final class VoxelWorld: NSObject, ObservableObject {
 
     override init() {
         super.init()
+        if let savedSkin = UserDefaults.standard.string(forKey: "blockbuild_selected_skin"),
+           let skin = PlayerSkin(rawValue: savedSkin) {
+            self.selectedSkin = skin
+        }
         loadControlLayout()
         setupGeometries()
         setupScene()
         loadSavedWorldsList()
 
-        // Automatically restore the most recent saved world on launch/update so worlds are never lost!
+        // Prepare the latest world in background, but keep user in Main Menu (isInGame = false)
         if let latestWorld = savedWorlds.first {
-            loadSavedWorld(latestWorld)
+            loadSavedWorld(latestWorld, enterGame: false)
         } else {
             // Check if any legacy save data exists before creating a brand new world
             let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
@@ -703,12 +992,25 @@ final class VoxelWorld: NSObject, ObservableObject {
                 // If files existed on disk, attempt one more scan before generating a new world
                 loadSavedWorldsList()
                 if let recovered = savedWorlds.first {
-                    loadSavedWorld(recovered)
+                    loadSavedWorld(recovered, enterGame: false)
                 } else {
                     startNewWorld(seed: worldSeed, customName: nil)
                     saveCurrentWorld(silent: true)
                 }
             }
+        }
+        isInGame = false
+
+        if UserDefaults.standard.object(forKey: "blockbuild_fps_stabilization") != nil {
+            self.isFpsStabilizationEnabled = UserDefaults.standard.bool(forKey: "blockbuild_fps_stabilization")
+        } else {
+            self.isFpsStabilizationEnabled = true
+        }
+
+        if UserDefaults.standard.object(forKey: "blockbuild_multiplayer_enabled") != nil {
+            self.isMultiplayerEnabled = UserDefaults.standard.bool(forKey: "blockbuild_multiplayer_enabled")
+        } else {
+            self.isMultiplayerEnabled = true
         }
 
         AlphaBackgroundMusic.shared.startIfNeeded()
@@ -726,6 +1028,11 @@ final class VoxelWorld: NSObject, ObservableObject {
         center.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main, using: saveHandler)
         center.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main, using: saveHandler)
         center.addObserver(forName: UIApplication.willTerminateNotification, object: nil, queue: .main, using: saveHandler)
+        center.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in
+                self?.startMultiplayerServices()
+            }
+        }
     }
 
     // MARK: - Control Layout Persistence
@@ -737,14 +1044,21 @@ final class VoxelWorld: NSObject, ObservableObject {
         }
     }
 
-    private func saveControlLayout() {
+    func saveControlLayout() {
         if let data = try? JSONEncoder().encode(controlLayout) {
             UserDefaults.standard.set(data, forKey: controlLayoutKey)
         }
     }
 
+    func finishEditingControls() {
+        isEditingControls = false
+        saveControlLayout()
+        statusToast = "Controls saved!"
+    }
+
     func resetControlLayout() {
         controlLayout = .default
+        saveControlLayout()
         statusToast = "Control layout reset to default"
     }
 
@@ -757,11 +1071,10 @@ final class VoxelWorld: NSObject, ObservableObject {
             sharedGeometries[type] = box
         }
 
-        // Water level geometries for levels 1..4 (Heights: 0.22, 0.44, 0.66, 0.88)
+        // Full block size water (1.0 x 1.0 x 1.0) like normal blocks
+        let wBox = SCNBox(width: 1.0, height: 1.0, length: 1.0, chamferRadius: 0.0)
+        wBox.materials = BlockType.water.materials
         for lvl in 1...4 {
-            let h = CGFloat(waterHeight(forLevel: lvl))
-            let wBox = SCNBox(width: 1.0, height: h, length: 1.0, chamferRadius: 0.0)
-            wBox.materials = BlockType.water.materials
             waterLevelGeometries[lvl] = wBox
         }
 
@@ -772,22 +1085,43 @@ final class VoxelWorld: NSObject, ObservableObject {
         doorOpenGeo = SCNBox(width: 0.20, height: 1.0, length: 1.0, chamferRadius: 0.0)
         doorOpenGeo.materials = BlockType.door.materials
 
-        // Trapdoor geometries (closed horizontal slab vs open vertical flap)
-        trapdoorClosedGeo = SCNBox(width: 1.0, height: 0.20, length: 1.0, chamferRadius: 0.0)
-        trapdoorClosedGeo.materials = BlockType.trapdoor.materials
+        // Roof stepped geometries
+        roofBaseGeo = SCNBox(width: 1.0, height: 0.50, length: 1.0, chamferRadius: 0.0)
+        roofBaseGeo.materials = BlockType.roof.materials
 
-        trapdoorOpenGeo = SCNBox(width: 1.0, height: 1.0, length: 0.20, chamferRadius: 0.0)
-        trapdoorOpenGeo.materials = BlockType.trapdoor.materials
+        roofStepGeo = SCNBox(width: 1.0, height: 0.50, length: 0.50, chamferRadius: 0.0)
+        roofStepGeo.materials = BlockType.roof.materials
+
+        // Roof corner step geometry: quarter-cube (0.50 x 0.50 x 0.50) - half the top of normal stair
+        roofCornerStepGeo = SCNBox(width: 0.50, height: 0.50, length: 0.50, chamferRadius: 0.0)
+        roofCornerStepGeo.materials = BlockType.roof.materials
+
+        // Slab geometry (1.0 x 0.50 x 1.0) - based off the roof block
+        slabGeo = SCNBox(width: 1.0, height: 0.50, length: 1.0, chamferRadius: 0.0)
+        slabGeo.materials = BlockType.slab.materials
+    }
+
+    func roofAngle(for direction: Int) -> Float {
+        switch direction {
+        case 0: return 0.0           // North (-Z)
+        case 1: return -.pi / 2.0    // East (+X)
+        case 2: return .pi           // South (+Z)
+        case 3: return .pi / 2.0     // West (-X)
+        default: return 0.0
+        }
+    }
+
+    func playerFacingDirection() -> Int {
+        let dir = cameraForwardVector()
+        if abs(dir.z) >= abs(dir.x) {
+            return (dir.z <= 0) ? 0 : 2 // 0: North (-Z), 2: South (+Z)
+        } else {
+            return (dir.x > 0) ? 1 : 3  // 1: East (+X), 3: West (-X)
+        }
     }
 
     private func waterHeight(forLevel level: Int) -> Float {
-        switch level {
-        case 4: return 0.88
-        case 3: return 0.66
-        case 2: return 0.44
-        case 1: return 0.22
-        default: return (level >= 4) ? 0.88 : 0.22
-        }
+        return 1.0
     }
 
     private func setupScene() {
@@ -844,12 +1178,38 @@ final class VoxelWorld: NSObject, ObservableObject {
 
     // MARK: - 500x500 Procedural World Generation Engine
 
+    func enterGame() {
+        isInGame = true
+        startMultiplayerServices()
+    }
+
+    func leaveToMainMenu() {
+        saveCurrentWorld(silent: true)
+        isInGame = false
+        disconnectMultiplayer()
+        stopMultiplayerServices()
+        activeJoinPrompt = nil
+        discoveredHosts.removeAll()
+    }
+
+    func setSkin(_ skin: PlayerSkin) {
+        selectedSkin = skin
+        UserDefaults.standard.set(skin.rawValue, forKey: "blockbuild_selected_skin")
+        broadcastPlayerPoseIfNeeded()
+        if isInGame {
+            startMultiplayerServices()
+        }
+        statusToast = "Skin: \(skin.displayName)"
+    }
+
     func regenerateNewWorld(customName: String? = nil) {
         // Save the current world before generating a new one so no progress is lost
         saveCurrentWorld(silent: true)
         let newSeed = Int.random(in: 1000...999_999)
         startNewWorld(seed: newSeed, customName: customName)
         saveCurrentWorld(silent: true)
+        isInGame = true
+        startMultiplayerServices()
         broadcastWorldSnapshotToPeers()
     }
 
@@ -966,7 +1326,9 @@ final class VoxelWorld: NSObject, ObservableObject {
                 // 2. Water filling basins up to seaLevel
                 if h < seaLevel {
                     for y in (h + 1)...seaLevel {
-                        localBlocks[BlockCoord(x: x, y: y, z: z)] = .water
+                        let wCoord = BlockCoord(x: x, y: y, z: z)
+                        localBlocks[wCoord] = .water
+                        waterSourceBlocks.insert(wCoord)
                     }
                 }
             }
@@ -991,7 +1353,7 @@ final class VoxelWorld: NSObject, ObservableObject {
                         localBlocks[BlockCoord(x: midX + 3, y: dy, z: midZ + 1)] = .woodLog
                     }
                 } else {
-                    // Alpha Wooden Cabin with Glass Windows, Door & Roof Trapdoor
+                    // Alpha Wooden Cabin with Glass Windows, Door & Pitched Roof
                     for dx in -2...2 {
                         for dz in -2...2 {
                             localBlocks[BlockCoord(x: midX + dx, y: baseH, z: midZ + dz)] = .woodPlanks
@@ -1011,11 +1373,34 @@ final class VoxelWorld: NSObject, ObservableObject {
                                     localBlocks[BlockCoord(x: midX + dx, y: baseH + 3, z: midZ + dz)] = .woodPlanks
                                 }
                             }
-                            if abs(dx) <= 1 && abs(dz) <= 1 {
-                                localBlocks[BlockCoord(x: midX + dx, y: baseH + 4, z: midZ + dz)] = (dx == 0 && dz == 0) ? .trapdoor : .woodPlanks
+                        }
+                    }
+
+                    // Complete pitched roof using the Roof block and top Slab block
+                    for dx in -2...2 {
+                        for dz in -2...2 {
+                            let c = BlockCoord(x: midX + dx, y: baseH + 4, z: midZ + dz)
+                            localBlocks[c] = .roof
+                            if abs(dz) >= abs(dx) {
+                                blockOrientations[c] = (dz < 0) ? 2 : 0
+                            } else {
+                                blockOrientations[c] = (dx < 0) ? 1 : 3
                             }
                         }
                     }
+                    for dx in -1...1 {
+                        for dz in -1...1 {
+                            let c = BlockCoord(x: midX + dx, y: baseH + 5, z: midZ + dz)
+                            localBlocks[c] = .roof
+                            if abs(dz) >= abs(dx) {
+                                blockOrientations[c] = (dz < 0) ? 2 : 0
+                            } else {
+                                blockOrientations[c] = (dx < 0) ? 1 : 3
+                            }
+                        }
+                    }
+                    let crestCoord = BlockCoord(x: midX, y: baseH + 6, z: midZ)
+                    localBlocks[crestCoord] = .slab
                 }
             }
         }
@@ -1316,6 +1701,138 @@ final class VoxelWorld: NSObject, ObservableObject {
         hasUnsavedChanges = true
     }
 
+    /// Automatically recedes and drains all downstream flowing water blocks when their feeding water source is scooped or plugged.
+    private func drainUnsupportedWater(around origin: BlockCoord, broadcast: Bool) {
+        var connectedFlowingWater: Set<BlockCoord> = []
+        var boundarySources: Set<BlockCoord> = []
+        var queue: [BlockCoord] = []
+
+        let initialNeighbors = [
+            BlockCoord(x: origin.x + 1, y: origin.y, z: origin.z),
+            BlockCoord(x: origin.x - 1, y: origin.y, z: origin.z),
+            BlockCoord(x: origin.x, y: origin.y, z: origin.z + 1),
+            BlockCoord(x: origin.x, y: origin.y, z: origin.z - 1),
+            BlockCoord(x: origin.x, y: origin.y - 1, z: origin.z),
+            BlockCoord(x: origin.x, y: origin.y + 1, z: origin.z)
+        ]
+
+        for n in initialNeighbors {
+            if blocks[n] == .water {
+                if waterSourceBlocks.contains(n) {
+                    boundarySources.insert(n)
+                } else {
+                    connectedFlowingWater.insert(n)
+                    queue.append(n)
+                }
+            }
+        }
+
+        let maxSearch = 400
+        var head = 0
+        while head < queue.count && connectedFlowingWater.count < maxSearch {
+            let curr = queue[head]
+            head += 1
+
+            let adjs = [
+                BlockCoord(x: curr.x + 1, y: curr.y, z: curr.z),
+                BlockCoord(x: curr.x - 1, y: curr.y, z: curr.z),
+                BlockCoord(x: curr.x, y: curr.y, z: curr.z + 1),
+                BlockCoord(x: curr.x, y: curr.y, z: curr.z - 1),
+                BlockCoord(x: curr.x, y: curr.y - 1, z: curr.z),
+                BlockCoord(x: curr.x, y: curr.y + 1, z: curr.z)
+            ]
+
+            for a in adjs {
+                if blocks[a] == .water {
+                    if waterSourceBlocks.contains(a) {
+                        boundarySources.insert(a)
+                    } else if !connectedFlowingWater.contains(a) {
+                        connectedFlowingWater.insert(a)
+                        queue.append(a)
+                        if connectedFlowingWater.count >= maxSearch { break }
+                    }
+                }
+            }
+        }
+
+        guard !connectedFlowingWater.isEmpty else { return }
+
+        // Propagate valid water flow levels from all surviving source blocks
+        var validLevels: [BlockCoord: Int] = [:]
+        var pQueue: [(BlockCoord, Int)] = []
+
+        for src in boundarySources {
+            validLevels[src] = 4
+            pQueue.append((src, 4))
+        }
+
+        var pHead = 0
+        while pHead < pQueue.count {
+            let (curr, currLevel) = pQueue[pHead]
+            pHead += 1
+
+            // 1. Water flowing straight down
+            let below = BlockCoord(x: curr.x, y: curr.y - 1, z: curr.z)
+            if curr.y > 0 && connectedFlowingWater.contains(below) {
+                if (validLevels[below] ?? 0) < 4 {
+                    validLevels[below] = 4
+                    pQueue.append((below, 4))
+                }
+            }
+
+            // 2. Water flowing horizontally
+            if currLevel > 1 {
+                let targets = bestFlowNeighborsTowardLowestSpot(from: curr)
+                for t in targets {
+                    if connectedFlowingWater.contains(t) {
+                        let tBelow = BlockCoord(x: t.x, y: t.y - 1, z: t.z)
+                        let hasDrop = (t.y > 0 && (blocks[tBelow] == nil || blocks[tBelow] == .water))
+                        let targetLvl = hasDrop ? 4 : (currLevel - 1)
+                        if targetLvl > (validLevels[t] ?? 0) {
+                            validLevels[t] = targetLvl
+                            pQueue.append((t, targetLvl))
+                        }
+                    }
+                }
+            }
+        }
+
+        var blocksToRefresh: Set<BlockCoord> = []
+        for c in connectedFlowingWater {
+            if let validLvl = validLevels[c] {
+                if waterSpreadLevels[c] != validLvl {
+                    waterSpreadLevels[c] = validLvl
+                    blocksToRefresh.insert(c)
+                }
+            } else {
+                blocks.removeValue(forKey: c)
+                let chunk = chunkForBlock(c)
+                chunkBlocks[chunk]?.removeValue(forKey: c)
+                modifiedBlocks[c] = -1
+                waterSpreadLevels.removeValue(forKey: c)
+                waterSourceBlocks.remove(c)
+                activeWaterFrontier.remove(c)
+
+                if let node = blockNodes.removeValue(forKey: c) {
+                    node.removeFromParentNode()
+                }
+                blocksToRefresh.insert(c)
+
+                if broadcast {
+                    broadcastBlockDelta(
+                        SavedBlockDelta(x: c.x, y: c.y, z: c.z, typeRaw: -1, waterLevel: nil, isOpen: nil)
+                    )
+                }
+            }
+        }
+
+        for c in blocksToRefresh {
+            updateVisibilityAround(c)
+        }
+
+        hasUnsavedChanges = true
+    }
+
     // MARK: - Saving & Loading Whole Worlds (Auto-Saves & Restores Old Worlds Across Every Update)
 
     private var saveFileURL: URL {
@@ -1433,7 +1950,8 @@ final class VoxelWorld: NSObject, ObservableObject {
             for (coord, type) in localBlocks {
                 let wLvl = (type == .water) ? (waterSpreadLevels[coord] ?? 4) : 0
                 let openBit = openToggleBlocks.contains(coord) ? 1 : 0
-                let encodedState = (type.rawValue & 0xFF) | ((wLvl & 0xF) << 8) | (openBit << 12)
+                let dir = (blockOrientations[coord] ?? 0) & 0x3
+                let encodedState = (type.rawValue & 0xFF) | ((wLvl & 0xF) << 8) | (openBit << 12) | (dir << 14)
                 packed.append(coord.x)
                 packed.append(coord.y)
                 packed.append(coord.z)
@@ -1449,7 +1967,8 @@ final class VoxelWorld: NSObject, ObservableObject {
                 z: coord.z,
                 typeRaw: rawVal,
                 waterLevel: (rawVal == BlockType.water.rawValue) ? (waterSpreadLevels[coord] ?? 4) : nil,
-                isOpen: openToggleBlocks.contains(coord) ? true : nil
+                isOpen: openToggleBlocks.contains(coord) ? true : nil,
+                direction: blockOrientations[coord]
             )
         }
 
@@ -1489,7 +2008,7 @@ final class VoxelWorld: NSObject, ObservableObject {
         }
     }
 
-    func loadSavedWorld(_ saved: SavedWorld) {
+    func loadSavedWorld(_ saved: SavedWorld, enterGame: Bool = true) {
         clearAllWorldState()
 
         currentWorldID = saved.id
@@ -1516,16 +2035,24 @@ final class VoxelWorld: NSObject, ObservableObject {
                     let typeRaw = encoded & 0xFF
                     let wLvl = (encoded >> 8) & 0xF
                     let isOpen = ((encoded >> 12) & 0x1) == 1
+                    let dir = (encoded >> 14) & 0x3
 
                     if let bType = BlockType(rawValue: typeRaw) {
                         let coord = BlockCoord(x: x, y: y, z: z)
                         localBlocks[coord] = bType
                         blocks[coord] = bType
                         if bType == .water {
-                            waterSpreadLevels[coord] = (wLvl > 0) ? wLvl : 4
+                            let lvl = (wLvl > 0) ? wLvl : 4
+                            waterSpreadLevels[coord] = lvl
+                            if lvl == 4 {
+                                waterSourceBlocks.insert(coord)
+                            }
                         }
                         if isOpen {
                             openToggleBlocks.insert(coord)
+                        }
+                        if bType == .roof {
+                            blockOrientations[coord] = dir
                         }
                     }
                 }
@@ -1538,8 +2065,15 @@ final class VoxelWorld: NSObject, ObservableObject {
         for d in deltasToRestore {
             let coord = BlockCoord(x: d.x, y: d.y, z: d.z)
             modifiedBlocks[coord] = d.typeRaw
+            if let dir = d.direction {
+                blockOrientations[coord] = dir
+            }
             if d.typeRaw == BlockType.water.rawValue {
-                waterSpreadLevels[coord] = d.waterLevel ?? 4
+                let lvl = d.waterLevel ?? 4
+                waterSpreadLevels[coord] = lvl
+                if lvl == 4 {
+                    waterSourceBlocks.insert(coord)
+                }
             }
             if d.isOpen == true {
                 openToggleBlocks.insert(coord)
@@ -1577,6 +2111,13 @@ final class VoxelWorld: NSObject, ObservableObject {
             saveCurrentWorld(silent: true)
         }
 
+        if enterGame {
+            isInGame = true
+            startMultiplayerServices()
+        } else {
+            isInGame = false
+            stopMultiplayerServices()
+        }
         statusToast = "Loaded '\(currentWorldName)'"
     }
 
@@ -1611,7 +2152,9 @@ final class VoxelWorld: NSObject, ObservableObject {
         activeChunks.removeAll()
         modifiedBlocks.removeAll()
         openToggleBlocks.removeAll()
+        blockOrientations.removeAll()
         waterSpreadLevels.removeAll()
+        waterSourceBlocks.removeAll()
         activeWaterFrontier.removeAll()
         activeSandBlocks.removeAll()
         lastPlayerChunk = nil
@@ -1619,17 +2162,13 @@ final class VoxelWorld: NSObject, ObservableObject {
 
     /// Computes a 6-bit face visibility mask for a water block at `coord` in SCNBox material order:
     /// Bit 0: Front (+Z), Bit 1: Right (+X), Bit 2: Back (-Z), Bit 3: Left (-X), Bit 4: Top (+Y), Bit 5: Bottom (-Y).
-    /// Bridges the vertical step face between adjacent stepping water levels so there are zero clear holes/gaps,
-    /// while hiding interior faces between adjacent water blocks of equal/greater height.
+    /// With full block size (1.0 x 1.0 x 1.0), all interior faces between adjacent water blocks are seamlessly culled.
     private func waterFaceMask(at coord: BlockCoord) -> Int {
         var mask = 0
 
-        let aboveCoord = BlockCoord(x: coord.x, y: coord.y + 1, z: coord.z)
-        let aboveHasWater = (blocks[aboveCoord] == .water)
-        let myLevel = aboveHasWater ? 4 : (waterSpreadLevels[coord] ?? 4)
-
         // Top (+Y, bit 4): visible only when there is no water directly above
-        if !aboveHasWater {
+        let topCoord = BlockCoord(x: coord.x, y: coord.y + 1, z: coord.z)
+        if blocks[topCoord] != .water {
             mask |= (1 << 4)
         }
 
@@ -1650,23 +2189,15 @@ final class VoxelWorld: NSObject, ObservableObject {
         for (nCoord, bit) in sideChecks {
             if let neighborType = blocks[nCoord] {
                 if neighborType == .water {
-                    // Check neighbor's effective water height level
-                    let nAboveWater = (blocks[BlockCoord(x: nCoord.x, y: nCoord.y + 1, z: nCoord.z)] == .water)
-                    let nLevel = nAboveWater ? 4 : (waterSpreadLevels[nCoord] ?? 4)
-
-                    // If my water level is taller than neighbor's water level,
-                    // render the side face to cleanly bridge the step with NO clear see-through gap!
-                    if myLevel > nLevel {
-                        mask |= (1 << bit)
-                    }
-                    // If myLevel <= nLevel, neighbor water covers or matches our water side, so hide face to eliminate seams
+                    // Full block size: adjacent water shares full height, hide shared interior face completely!
+                    continue
                 } else if neighborType.isTransparent {
                     // Neighbor is glass, door, or trapdoor: show water side face
                     mask |= (1 << bit)
                 }
                 // Neighbor is opaque solid block (grass, dirt, stone, sand, etc.): hide side face to prevent Z-fighting
             } else {
-                // Neighbor is air: show water side face (e.g. edge of stream or waterfall)
+                // Neighbor is air: show water side face (e.g. waterfall edge or stream border)
                 mask |= (1 << bit)
             }
         }
@@ -1674,15 +2205,13 @@ final class VoxelWorld: NSObject, ObservableObject {
         return mask
     }
 
-    private func maskedWaterGeometry(level: Int, faceMask: Int) -> SCNBox {
-        let clampedLevel = max(1, min(4, level))
-        let cacheKey = (clampedLevel << 6) | (faceMask & 0x3F)
+    private func maskedWaterGeometry(level: Int = 4, faceMask: Int) -> SCNBox {
+        let cacheKey = faceMask & 0x3F
         if let cached = waterMaskedGeometries[cacheKey] {
             return cached
         }
 
-        let h = CGFloat(waterHeight(forLevel: clampedLevel))
-        let box = SCNBox(width: 1.0, height: h, length: 1.0, chamferRadius: 0.0)
+        let box = SCNBox(width: 1.0, height: 1.0, length: 1.0, chamferRadius: 0.0)
         let visibleMat = BlockType.water.materials.first!
         let hiddenMat = BlockType.invisibleMaterial
 
@@ -1727,6 +2256,68 @@ final class VoxelWorld: NSObject, ObservableObject {
         return false
     }
 
+    private func getRoofCornerOffset(at coord: BlockCoord) -> (stepX: Float, stepZ: Float)? {
+        guard blocks[coord] == .roof else { return nil }
+
+        // Check horizontal neighbors on X axis (West/East) and Z axis (North/South, aka top-down Y axis)
+        let westRoof = (blocks[BlockCoord(x: coord.x - 1, y: coord.y, z: coord.z)] == .roof)
+        let eastRoof = (blocks[BlockCoord(x: coord.x + 1, y: coord.y, z: coord.z)] == .roof)
+        let northRoof = (blocks[BlockCoord(x: coord.x, y: coord.y, z: coord.z - 1)] == .roof)
+        let southRoof = (blocks[BlockCoord(x: coord.x, y: coord.y, z: coord.z + 1)] == .roof)
+
+        // Also check if neighbor is one block above or below (sloped roof neighbors)
+        let westRoofAdj = westRoof || (blocks[BlockCoord(x: coord.x - 1, y: coord.y + 1, z: coord.z)] == .roof) || (blocks[BlockCoord(x: coord.x - 1, y: coord.y - 1, z: coord.z)] == .roof)
+        let eastRoofAdj = eastRoof || (blocks[BlockCoord(x: coord.x + 1, y: coord.y + 1, z: coord.z)] == .roof) || (blocks[BlockCoord(x: coord.x + 1, y: coord.y - 1, z: coord.z)] == .roof)
+        let northRoofAdj = northRoof || (blocks[BlockCoord(x: coord.x, y: coord.y + 1, z: coord.z - 1)] == .roof) || (blocks[BlockCoord(x: coord.x, y: coord.y - 1, z: coord.z - 1)] == .roof)
+        let southRoofAdj = southRoof || (blocks[BlockCoord(x: coord.x, y: coord.y + 1, z: coord.z + 1)] == .roof) || (blocks[BlockCoord(x: coord.x, y: coord.y - 1, z: coord.z + 1)] == .roof)
+
+        let dx: Int
+        if westRoofAdj && !eastRoofAdj {
+            dx = -1
+        } else if eastRoofAdj && !westRoofAdj {
+            dx = 1
+        } else {
+            dx = 0
+        }
+
+        let dz: Int
+        if northRoofAdj && !southRoofAdj {
+            dz = -1
+        } else if southRoofAdj && !northRoofAdj {
+            dz = 1
+        } else {
+            dz = 0
+        }
+
+        // Check 3D Y axis as well
+        let upRoof = (blocks[BlockCoord(x: coord.x, y: coord.y + 1, z: coord.z)] == .roof)
+        let downRoof = (blocks[BlockCoord(x: coord.x, y: coord.y - 1, z: coord.z)] == .roof)
+        let dy = (upRoof && !downRoof) ? 1 : ((downRoof && !upRoof) ? -1 : 0)
+
+        // Must be between one on X axis and one on Y/Z axis
+        guard dx != 0 && (dz != 0 || dy != 0) else {
+            return nil
+        }
+
+        let effectiveDz = (dz != 0) ? dz : (dy > 0 ? 1 : -1)
+        let dir = blockOrientations[coord] ?? 0
+
+        let stepX: Float
+        let stepZ: Float
+
+        if dir == 1 || dir == 3 {
+            // Player gaze was along X
+            stepX = (dir == 1) ? 0.25 : -0.25
+            stepZ = Float(effectiveDz) * 0.25
+        } else {
+            // Player gaze was along Z (dir == 0 or 2)
+            stepZ = (dir == 2) ? 0.25 : -0.25
+            stepX = Float(dx) * 0.25
+        }
+
+        return (stepX, stepZ)
+    }
+
     private func configureNode(_ node: SCNNode, for coord: BlockCoord, type: BlockType) {
         let fx = Float(coord.x)
         let fy = Float(coord.y)
@@ -1734,16 +2325,17 @@ final class VoxelWorld: NSObject, ObservableObject {
 
         switch type {
         case .water:
-            let aboveHasWater = (blocks[BlockCoord(x: coord.x, y: coord.y + 1, z: coord.z)] == .water)
-            let lvl = aboveHasWater ? 4 : (waterSpreadLevels[coord] ?? 4)
-            let h = waterHeight(forLevel: lvl)
+            node.childNodes.forEach { $0.removeFromParentNode() }
+            node.eulerAngles = SCNVector3(0, 0, 0)
             let mask = waterFaceMask(at: coord)
-            node.geometry = maskedWaterGeometry(level: lvl, faceMask: mask)
-            node.position = SCNVector3(fx, fy - 0.5 + h * 0.5, fz)
+            node.geometry = maskedWaterGeometry(level: 4, faceMask: mask)
+            node.position = SCNVector3(fx, fy, fz)
             node.renderingOrder = 10
             node.categoryBitMask = 2 // Water has no solid hitbox
 
         case .door:
+            node.childNodes.forEach { $0.removeFromParentNode() }
+            node.eulerAngles = SCNVector3(0, 0, 0)
             let isOpen = openToggleBlocks.contains(coord)
             node.geometry = isOpen ? doorOpenGeo : doorClosedGeo
             if isOpen {
@@ -1754,18 +2346,47 @@ final class VoxelWorld: NSObject, ObservableObject {
             node.renderingOrder = 2
             node.categoryBitMask = 1
 
-        case .trapdoor:
-            let isOpen = openToggleBlocks.contains(coord)
-            node.geometry = isOpen ? trapdoorOpenGeo : trapdoorClosedGeo
-            if isOpen {
-                node.position = SCNVector3(fx, fy, fz - 0.40)
+        case .roof:
+            node.geometry = nil
+            node.childNodes.forEach { $0.removeFromParentNode() }
+            node.eulerAngles = SCNVector3(0, 0, 0)
+
+            let baseNode = SCNNode(geometry: roofBaseGeo)
+            baseNode.position = SCNVector3(0, -0.25, 0)
+            baseNode.categoryBitMask = 1
+            node.addChildNode(baseNode)
+
+            if let corner = getRoofCornerOffset(at: coord) {
+                // Special Corner Roof Block: top step is a quarter-cube (half the top of normal stair)
+                let cornerStepNode = SCNNode(geometry: roofCornerStepGeo)
+                cornerStepNode.position = SCNVector3(corner.stepX, 0.25, corner.stepZ)
+                cornerStepNode.categoryBitMask = 1
+                node.addChildNode(cornerStepNode)
             } else {
-                node.position = SCNVector3(fx, fy - 0.40, fz)
+                let stepNode = SCNNode(geometry: roofStepGeo)
+                stepNode.position = SCNVector3(0, 0.25, -0.25)
+                stepNode.categoryBitMask = 1
+                node.addChildNode(stepNode)
+
+                let dir = blockOrientations[coord] ?? 0
+                node.eulerAngles = SCNVector3(0, roofAngle(for: dir), 0)
             }
-            node.renderingOrder = 2
+
+            node.position = SCNVector3(fx, fy, fz)
+            node.renderingOrder = 0
+            node.categoryBitMask = 1
+
+        case .slab:
+            node.childNodes.forEach { $0.removeFromParentNode() }
+            node.eulerAngles = SCNVector3(0, 0, 0)
+            node.geometry = slabGeo
+            node.position = SCNVector3(fx, fy - 0.25, fz)
+            node.renderingOrder = 0
             node.categoryBitMask = 1
 
         default:
+            node.childNodes.forEach { $0.removeFromParentNode() }
+            node.eulerAngles = SCNVector3(0, 0, 0)
             node.geometry = sharedGeometries[type]
             node.position = SCNVector3(fx, fy, fz)
             node.renderingOrder = (type == .glass) ? 5 : 0
@@ -1898,12 +2519,16 @@ final class VoxelWorld: NSObject, ObservableObject {
     }
 
     private func removeBlockInternal(at coord: BlockCoord, broadcast: Bool) {
+        let wasWater = (blocks[coord] == .water)
         blocks.removeValue(forKey: coord)
         let chunk = chunkForBlock(coord)
         chunkBlocks[chunk]?.removeValue(forKey: coord)
         modifiedBlocks[coord] = -1
         openToggleBlocks.remove(coord)
+        blockOrientations.removeValue(forKey: coord)
         waterSpreadLevels.removeValue(forKey: coord)
+        waterSourceBlocks.remove(coord)
+        activeWaterFrontier.remove(coord)
 
         updateVisibilityAround(coord)
         triggerAdjacentPhysicsWakeup(around: coord)
@@ -1912,6 +2537,10 @@ final class VoxelWorld: NSObject, ObservableObject {
             broadcastBlockDelta(
                 SavedBlockDelta(x: coord.x, y: coord.y, z: coord.z, typeRaw: -1, waterLevel: nil, isOpen: nil)
             )
+        }
+
+        if wasWater {
+            drainUnsupportedWater(around: coord, broadcast: broadcast)
         }
     }
 
@@ -1961,7 +2590,11 @@ final class VoxelWorld: NSObject, ObservableObject {
         }
 
         inventory[selectedBlock] = available - 1
-        placeBlockInternal(at: placeCoord, type: selectedBlock, broadcast: true)
+        var dirToSet: Int? = nil
+        if selectedBlock == .roof {
+            dirToSet = playerFacingDirection()
+        }
+        placeBlockInternal(at: placeCoord, type: selectedBlock, direction: dirToSet, broadcast: true)
 
         // When placing a Wooden Door, automatically place upper half if space above is free
         if selectedBlock == .door {
@@ -1981,18 +2614,27 @@ final class VoxelWorld: NSObject, ObservableObject {
         updateCrosshairTarget()
     }
 
-    private func placeBlockInternal(at placeCoord: BlockCoord, type: BlockType, broadcast: Bool) {
+    private func placeBlockInternal(at placeCoord: BlockCoord, type: BlockType, direction: Int? = nil, broadcast: Bool) {
+        let wasWater = (blocks[placeCoord] == .water)
         blocks[placeCoord] = type
         let chunk = chunkForBlock(placeCoord)
         chunkBlocks[chunk, default: [:]][placeCoord] = type
         modifiedBlocks[placeCoord] = type.rawValue
         openToggleBlocks.remove(placeCoord)
 
+        if let dir = direction {
+            blockOrientations[placeCoord] = dir
+        } else if type == .roof && blockOrientations[placeCoord] == nil {
+            blockOrientations[placeCoord] = playerFacingDirection()
+        }
+
         if type == .water {
             waterSpreadLevels[placeCoord] = 4
+            waterSourceBlocks.insert(placeCoord)
             activeWaterFrontier.insert(placeCoord)
         } else {
             waterSpreadLevels.removeValue(forKey: placeCoord)
+            waterSourceBlocks.remove(placeCoord)
         }
 
         if type == .sand {
@@ -2009,9 +2651,14 @@ final class VoxelWorld: NSObject, ObservableObject {
                     z: placeCoord.z,
                     typeRaw: type.rawValue,
                     waterLevel: (type == .water) ? 4 : nil,
-                    isOpen: false
+                    isOpen: false,
+                    direction: blockOrientations[placeCoord]
                 )
             )
+        }
+
+        if wasWater && type != .water {
+            drainUnsupportedWater(around: placeCoord, broadcast: broadcast)
         }
     }
 
@@ -2020,7 +2667,7 @@ final class VoxelWorld: NSObject, ObservableObject {
             inventory[type] = (inventory[type] ?? 0) + 20
         }
         saveCurrentWorld(silent: true)
-        statusToast = "+20 of all 10 blocks added!"
+        statusToast = "+20 of all \(BlockType.allCases.count) blocks added!"
     }
 
     // MARK: - 3D AABB Hitbox Collision Engine (All blocks except Water & Open Doors/Trapdoors)
@@ -2039,9 +2686,9 @@ final class VoxelWorld: NSObject, ObservableObject {
         let fx = Float(block.x)
         let fy = Float(block.y)
         let fz = Float(block.z)
-        if blocks[block] == .trapdoor && !openToggleBlocks.contains(block) {
-            // Closed trapdoor is a thin bottom slab (height 0.20)
-            return (fx - 0.5, fx + 0.5, fy - 0.5, fy - 0.30, fz - 0.5, fz + 0.5)
+        if blocks[block] == .slab {
+            // Half-height slab (bottom half from fy - 0.5 to fy)
+            return (fx - 0.5, fx + 0.5, fy - 0.5, fy, fz - 0.5, fz + 0.5)
         }
         if blocks[block] == .door && !openToggleBlocks.contains(block) {
             // Closed door panel (length 0.20 at front edge)
@@ -2246,9 +2893,12 @@ final class VoxelWorld: NSObject, ObservableObject {
     }
 
     func stepPhysics(dt: Float) {
-        let clampedDt = min(dt, 0.1)
-        let horizSpeed: Float = isFlying ? 9.8 : 5.8
-        let flyVerticalSpeed: Float = 10.5
+        let clampedDt = isFpsStabilizationEnabled ? min(dt, 1.0 / 60.0) : min(dt, 0.1)
+        let mult = max(0.4, min(2.0, controlLayout.movementSpeedMultiplier))
+        let baseWalkSpeed: Float = 2.75
+        let baseFlySpeed: Float = 4.2
+        let horizSpeed: Float = (isFlying ? baseFlySpeed : baseWalkSpeed) * mult
+        let flyVerticalSpeed: Float = 4.2 * mult
 
         let forwardX = -sin(yaw)
         let forwardZ = -cos(yaw)
@@ -2281,17 +2931,17 @@ final class VoxelWorld: NSObject, ObservableObject {
             let inWater = isPlayerInWater(at: pos)
             if inWater {
                 if verticalInput > 0.1 {
-                    verticalVelocity = 4.8
+                    verticalVelocity = 2.8
                 } else if verticalInput < -0.1 {
-                    verticalVelocity = -4.2
+                    verticalVelocity = -2.6
                 } else {
-                    verticalVelocity = max(verticalVelocity - 7.5 * clampedDt, -2.2)
+                    verticalVelocity = max(verticalVelocity - 6.5 * clampedDt, -2.0)
                 }
             } else {
                 if verticalInput > 0.1 && isPlayerGrounded(at: pos) {
-                    verticalVelocity = 7.4
+                    verticalVelocity = 5.6
                 }
-                verticalVelocity -= 18.0 * clampedDt
+                verticalVelocity -= 15.0 * clampedDt
             }
 
             let targetY = pos.y + verticalVelocity * clampedDt
@@ -2344,12 +2994,16 @@ final class VoxelWorld: NSObject, ObservableObject {
             broadcastPlayerPoseIfNeeded()
         }
 
-        let ix = Int(round(playerPosition.x))
-        let iy = Int(round(playerPosition.y))
-        let iz = Int(round(playerPosition.z))
-        let coordStr = "X:\(ix) Y:\(iy) Z:\(iz)"
-        if playerCoordText != coordStr {
-            playerCoordText = coordStr
+        coordTextTimeAccumulator += clampedDt
+        if coordTextTimeAccumulator >= (isFpsStabilizationEnabled ? 0.20 : 0.05) {
+            coordTextTimeAccumulator = 0.0
+            let ix = Int(round(playerPosition.x))
+            let iy = Int(round(playerPosition.y))
+            let iz = Int(round(playerPosition.z))
+            let coordStr = "X:\(ix) Y:\(iy) Z:\(iz)"
+            if playerCoordText != coordStr {
+                playerCoordText = coordStr
+            }
         }
 
         // Calculate real-time FPS smoothed over ~0.35s
@@ -2364,7 +3018,15 @@ final class VoxelWorld: NSObject, ObservableObject {
             }
         }
 
-        updateCrosshairTarget()
+        if isFpsStabilizationEnabled {
+            crosshairRaycastSkip += 1
+            if crosshairRaycastSkip >= 2 {
+                crosshairRaycastSkip = 0
+                updateCrosshairTarget()
+            }
+        } else {
+            updateCrosshairTarget()
+        }
     }
 
     func updateCameraTransform() {
@@ -2376,9 +3038,9 @@ final class VoxelWorld: NSObject, ObservableObject {
     }
 
     func updateCrosshairTarget() {
-        let maxReach: Float = 8.5
-        let dir = cameraDirection()
-        let start = playerPosition
+        let maxReach: Float = 9.5
+        let dir = cameraForwardVector()
+        let start = cameraNode.presentation.worldPosition
         let end = SCNVector3(
             start.x + dir.x * maxReach,
             start.y + dir.y * maxReach,
@@ -2388,30 +3050,72 @@ final class VoxelWorld: NSObject, ObservableObject {
         let options: [String: Any] = [
             SCNHitTestOption.searchMode.rawValue: SCNHitTestSearchMode.closest.rawValue,
             SCNHitTestOption.ignoreHiddenNodes.rawValue: true,
-            SCNHitTestOption.categoryBitMask.rawValue: 3 // Hits both solid blocks (1) and water (2)
+            SCNHitTestOption.categoryBitMask.rawValue: 7 // Hits solid blocks (1), water (2), compound child nodes
         ]
 
         let hits = blocksRootNode.hitTestWithSegment(from: start, to: end, options: options)
-        if let hit = hits.first,
-           let name = hit.node.name {
-            let parts = name.split(separator: ",").compactMap { Int($0) }
-            if parts.count == 3 {
-                let hitCoord = BlockCoord(x: parts[0], y: parts[1], z: parts[2])
+        if let hit = hits.first {
+            // Find coordinate from hit node or its parents (for compound blocks like roof or door)
+            var targetNode: SCNNode? = hit.node
+            var parsedCoord: BlockCoord? = nil
+            while let candidate = targetNode, candidate != blocksRootNode {
+                if let name = candidate.name {
+                    let parts = name.split(separator: ",").compactMap { Int($0) }
+                    if parts.count == 3 {
+                        parsedCoord = BlockCoord(x: parts[0], y: parts[1], z: parts[2])
+                        break
+                    }
+                }
+                targetNode = candidate.parent
+            }
+
+            if let hitCoord = parsedCoord {
                 currentHitCoord = hitCoord
                 targetedBlockType = blocks[hitCoord]
                 isTargetedBlockOpen = openToggleBlocks.contains(hitCoord)
 
                 let n = hit.worldNormal
-                let nx = Int(round(n.x))
-                let ny = Int(round(n.y))
-                let nz = Int(round(n.z))
+                let absX = abs(n.x)
+                let absY = abs(n.y)
+                let absZ = abs(n.z)
+
+                let nx: Int
+                let ny: Int
+                let nz: Int
+
+                if absX >= absY && absX >= absZ {
+                    nx = n.x >= 0 ? 1 : -1
+                    ny = 0
+                    nz = 0
+                } else if absY >= absX && absY >= absZ {
+                    nx = 0
+                    ny = n.y >= 0 ? 1 : -1
+                    nz = 0
+                } else {
+                    nx = 0
+                    ny = 0
+                    nz = n.z >= 0 ? 1 : -1
+                }
+
                 currentPlaceCoord = BlockCoord(
                     x: hitCoord.x + nx,
                     y: hitCoord.y + ny,
                     z: hitCoord.z + nz
                 )
 
-                selectionBoxNode.position = SCNVector3(Float(hitCoord.x), Float(hitCoord.y), Float(hitCoord.z))
+                if targetedBlockType == .water {
+                    let aboveHasWater = (blocks[BlockCoord(x: hitCoord.x, y: hitCoord.y + 1, z: hitCoord.z)] == .water)
+                    let lvl = aboveHasWater ? 4 : (waterSpreadLevels[hitCoord] ?? 4)
+                    let h = waterHeight(forLevel: lvl)
+                    selectionBoxNode.scale = SCNVector3(1, 1, 1)
+                    selectionBoxNode.position = SCNVector3(Float(hitCoord.x), Float(hitCoord.y) - 0.5 + h * 0.5, Float(hitCoord.z))
+                } else if targetedBlockType == .slab {
+                    selectionBoxNode.scale = SCNVector3(1, 0.5, 1)
+                    selectionBoxNode.position = SCNVector3(Float(hitCoord.x), Float(hitCoord.y) - 0.25, Float(hitCoord.z))
+                } else {
+                    selectionBoxNode.scale = SCNVector3(1, 1, 1)
+                    selectionBoxNode.position = SCNVector3(Float(hitCoord.x), Float(hitCoord.y), Float(hitCoord.z))
+                }
                 selectionBoxNode.isHidden = false
                 return
             }
@@ -2421,7 +3125,17 @@ final class VoxelWorld: NSObject, ObservableObject {
         currentPlaceCoord = nil
         targetedBlockType = nil
         isTargetedBlockOpen = false
+        selectionBoxNode.scale = SCNVector3(1, 1, 1)
         selectionBoxNode.isHidden = true
+    }
+
+    func cameraForwardVector() -> SCNVector3 {
+        let front = cameraNode.presentation.convertVector(SCNVector3(0, 0, -1), to: nil)
+        let len = sqrt(front.x * front.x + front.y * front.y + front.z * front.z)
+        if len > 0.0001 {
+            return SCNVector3(front.x / len, front.y / len, front.z / len)
+        }
+        return cameraDirection()
     }
 
     private func cameraDirection() -> SCNVector3 {
@@ -2435,29 +3149,58 @@ final class VoxelWorld: NSObject, ObservableObject {
     // MARK: - Local Multiplayer (MultipeerConnectivity)
 
     private func setupMultiplayer() {
-        let cleanName = localPlayerName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let display = cleanName.isEmpty ? "Builder-\(Int.random(in: 10...99))" : String(cleanName.prefix(24))
-        localPlayerName = display
+        if localPlayerName.isEmpty {
+            if let saved = UserDefaults.standard.string(forKey: "blockbuild_player_name"),
+               !saved.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                localPlayerName = saved
+            } else {
+                let devName = UIDevice.current.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                let base = (devName.isEmpty || devName == "iPhone" || devName == "iPad") ? "Builder" : devName
+                let tag = Int.random(in: 100...999)
+                localPlayerName = "\(base.prefix(10))-\(tag)"
+                UserDefaults.standard.set(localPlayerName, forKey: "blockbuild_player_name")
+            }
+        }
+
+        let display = String(localPlayerName.prefix(24))
         peerID = MCPeerID(displayName: display)
         mcSession = MCSession(peer: peerID, securityIdentity: nil, encryptionPreference: .none)
         mcSession.delegate = self
-
         startMultiplayerServices()
+    }
+
+    func updateLocalPlayerName(_ newName: String) {
+        let clean = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty, clean != localPlayerName else { return }
+        localPlayerName = String(clean.prefix(24))
+        UserDefaults.standard.set(localPlayerName, forKey: "blockbuild_player_name")
+        setupMultiplayer()
     }
 
     func startMultiplayerServices() {
         stopMultiplayerServices()
+        guard isMultiplayerEnabled else { return }
 
-        if isHostingMultiplayer {
-            let adv = MCNearbyServiceAdvertiser(
-                peer: peerID,
-                discoveryInfo: ["worldName": currentWorldName],
-                serviceType: serviceType
-            )
-            adv.delegate = self
-            adv.startAdvertisingPeer()
-            advertiser = adv
-        }
+        // Continuous signal broadcasting for BlockBuild discovery on local network
+        let safePlayerName = localPlayerName.isEmpty ? "Builder" : localPlayerName
+        let safeWorldName = currentWorldName.isEmpty ? "BlockBuild World" : currentWorldName
+
+        let discoveryInfo: [String: String] = [
+            "playerName": String(safePlayerName.prefix(20)),
+            "worldName": String(safeWorldName.prefix(24)),
+            "skin": selectedSkin.rawValue,
+            "isInGame": isInGame ? "1" : "0",
+            "isHost": (isHostingMultiplayer && isInGame) ? "1" : "0"
+        ]
+
+        let adv = MCNearbyServiceAdvertiser(
+            peer: peerID,
+            discoveryInfo: discoveryInfo,
+            serviceType: serviceType
+        )
+        adv.delegate = self
+        adv.startAdvertisingPeer()
+        advertiser = adv
 
         let brw = MCNearbyServiceBrowser(peer: peerID, serviceType: serviceType)
         brw.delegate = self
@@ -2472,16 +3215,102 @@ final class VoxelWorld: NSObject, ObservableObject {
         browser = nil
     }
 
+    func toggleMultiplayerEnabled(_ enabled: Bool) {
+        isMultiplayerEnabled = enabled
+        if enabled {
+            startMultiplayerServices()
+            statusToast = "Multiplayer enabled: Sending signals"
+        } else {
+            disconnectMultiplayer()
+            stopMultiplayerServices()
+            statusToast = "Multiplayer disabled"
+        }
+    }
+
     func toggleMultiplayerHosting(_ enabled: Bool) {
         isHostingMultiplayer = enabled
         startMultiplayerServices()
         statusToast = enabled ? "Hosting local world '\(currentWorldName)'" : "Stopped hosting"
     }
 
+    func invitePeerToCurrentWorld(_ targetPeer: MCPeerID) {
+        guard let brw = browser else { return }
+        brw.invitePeer(targetPeer, to: mcSession, withContext: nil, timeout: 30)
+        statusToast = "Sent invite to \(targetPeer.displayName)..."
+    }
+
     func joinDiscoveredHost(_ host: DiscoveredLocalHost) {
         guard let brw = browser else { return }
-        brw.invitePeer(host.peerID, to: mcSession, withContext: nil, timeout: 15)
-        statusToast = "Joining '\(host.worldName)' (\(host.peerID.displayName))..."
+        isHostingMultiplayer = false
+        // Re-advertise as guest
+        startMultiplayerServices()
+        mcSession.disconnect()
+
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            brw.invitePeer(host.peerID, to: self.mcSession, withContext: nil, timeout: 30)
+            self.statusToast = "Joining '\(host.worldName)' (\(host.playerName))..."
+        }
+    }
+
+    func checkAndTriggerJoinPrompt(for host: DiscoveredLocalHost) {
+        guard isMultiplayerEnabled else { return }
+        // Don't pop up if we are already connected to them
+        guard !connectedPlayerNames.contains(host.playerName) && !connectedPlayerNames.contains(host.id) else { return }
+        // Don't override an existing prompt
+        guard activeJoinPrompt == nil else { return }
+        // Don't show if user dismissed prompt for this peer/world
+        let promptKey = "\(host.id)_\(host.worldName)"
+        guard !dismissedPromptKeys.contains(promptKey) else { return }
+
+        // If the other player is in-game, pop up asking if the user wants to join their world!
+        if host.isInGame {
+            self.activeJoinPrompt = MultiplayerJoinPrompt(
+                peerID: host.peerID,
+                playerName: host.playerName,
+                worldName: host.worldName,
+                isDirectInvitation: false,
+                invitationHandler: nil
+            )
+        }
+    }
+
+    func acceptActiveJoinPrompt(_ prompt: MultiplayerJoinPrompt) {
+        activeJoinPrompt = nil
+        let promptKey = "\(prompt.peerID.displayName)_\(prompt.worldName)"
+        dismissedPromptKeys.insert(promptKey)
+
+        if let handler = prompt.invitationHandler {
+            // Direct invitation accepted
+            isHostingMultiplayer = false
+            handler(true, mcSession)
+            statusToast = "Joining \(prompt.playerName)'s world..."
+        } else {
+            // Found nearby world broadcast prompt accepted
+            if let host = discoveredHosts.first(where: { $0.peerID == prompt.peerID }) {
+                joinDiscoveredHost(host)
+            } else {
+                let tempHost = DiscoveredLocalHost(
+                    id: prompt.peerID.displayName,
+                    peerID: prompt.peerID,
+                    worldName: prompt.worldName,
+                    playerName: prompt.playerName,
+                    skin: .steve,
+                    isInGame: true
+                )
+                joinDiscoveredHost(tempHost)
+            }
+        }
+    }
+
+    func declineActiveJoinPrompt() {
+        guard let prompt = activeJoinPrompt else { return }
+        activeJoinPrompt = nil
+        if let handler = prompt.invitationHandler {
+            handler(false, nil)
+        }
+        let promptKey = "\(prompt.peerID.displayName)_\(prompt.worldName)"
+        dismissedPromptKeys.insert(promptKey)
     }
 
     func disconnectMultiplayer() {
@@ -2491,7 +3320,12 @@ final class VoxelWorld: NSObject, ObservableObject {
             node.removeFromParentNode()
         }
         remotePlayerNodes.removeAll()
-        startMultiplayerServices()
+        remotePlayerSkins.removeAll()
+        if isInGame {
+            startMultiplayerServices()
+        } else {
+            stopMultiplayerServices()
+        }
         statusToast = "Disconnected from local session"
     }
 
@@ -2499,11 +3333,40 @@ final class VoxelWorld: NSObject, ObservableObject {
         guard !mcSession.connectedPeers.isEmpty,
               let data = try? JSONEncoder().encode(packet) else { return }
         let mode: MCSessionSendDataMode = reliable ? .reliable : .unreliable
-        try? mcSession.send(data, toPeers: mcSession.connectedPeers, with: mode)
+        do {
+            try mcSession.send(data, toPeers: mcSession.connectedPeers, with: mode)
+        } catch {
+            print("[Multiplayer] broadcast packet error: \(error.localizedDescription)")
+        }
+    }
+
+    private func sendPacketToPeer(_ packet: MultiplayerPacket, peer: MCPeerID, reliable: Bool) {
+        guard let data = try? JSONEncoder().encode(packet) else { return }
+        let mode: MCSessionSendDataMode = reliable ? .reliable : .unreliable
+        do {
+            try mcSession.send(data, toPeers: [peer], with: mode)
+        } catch {
+            print("[Multiplayer] sendPacketToPeer error: \(error.localizedDescription)")
+        }
+    }
+
+    private func sendPacketToPeers(_ packet: MultiplayerPacket, peers: [MCPeerID], reliable: Bool) {
+        guard !peers.isEmpty, let data = try? JSONEncoder().encode(packet) else { return }
+        let mode: MCSessionSendDataMode = reliable ? .reliable : .unreliable
+        do {
+            try mcSession.send(data, toPeers: peers, with: mode)
+        } catch {
+            print("[Multiplayer] sendPacketToPeers error: \(error.localizedDescription)")
+        }
     }
 
     private func broadcastWorldSnapshotToPeers() {
-        guard !mcSession.connectedPeers.isEmpty else { return }
+        for peer in mcSession.connectedPeers {
+            sendWorldSnapshot(to: peer)
+        }
+    }
+
+    private func sendWorldSnapshot(to peer: MCPeerID) {
         let serializedDeltas = modifiedBlocks.map { (coord, rawVal) in
             SavedBlockDelta(
                 x: coord.x,
@@ -2511,24 +3374,51 @@ final class VoxelWorld: NSObject, ObservableObject {
                 z: coord.z,
                 typeRaw: rawVal,
                 waterLevel: (rawVal == BlockType.water.rawValue) ? (waterSpreadLevels[coord] ?? 4) : nil,
-                isOpen: openToggleBlocks.contains(coord) ? true : nil
+                isOpen: openToggleBlocks.contains(coord) ? true : nil,
+                direction: blockOrientations[coord]
             )
         }
-        let packet = MultiplayerPacket(
-            kind: .worldSnapshot,
-            senderName: localPlayerName,
-            worldID: currentWorldID,
-            worldName: currentWorldName,
-            seed: worldSeed,
-            deltas: serializedDeltas,
-            blockDelta: nil,
-            px: playerPosition.x,
-            py: playerPosition.y,
-            pz: playerPosition.z,
-            yaw: yaw,
-            pitch: pitch
-        )
-        sendPacket(packet, reliable: true)
+
+        let chunkSize = 250
+        if serializedDeltas.isEmpty {
+            let packet = MultiplayerPacket(
+                kind: .worldSnapshot,
+                senderName: localPlayerName,
+                skinRaw: selectedSkin.rawValue,
+                worldID: currentWorldID,
+                worldName: currentWorldName,
+                seed: worldSeed,
+                deltas: [],
+                blockDelta: nil,
+                px: playerPosition.x,
+                py: playerPosition.y,
+                pz: playerPosition.z,
+                yaw: yaw,
+                pitch: pitch
+            )
+            sendPacketToPeer(packet, peer: peer, reliable: true)
+        } else {
+            for startIndex in stride(from: 0, to: serializedDeltas.count, by: chunkSize) {
+                let endIndex = min(startIndex + chunkSize, serializedDeltas.count)
+                let chunk = Array(serializedDeltas[startIndex..<endIndex])
+                let packet = MultiplayerPacket(
+                    kind: .worldSnapshot,
+                    senderName: localPlayerName,
+                    skinRaw: selectedSkin.rawValue,
+                    worldID: currentWorldID,
+                    worldName: currentWorldName,
+                    seed: worldSeed,
+                    deltas: chunk,
+                    blockDelta: nil,
+                    px: playerPosition.x,
+                    py: playerPosition.y,
+                    pz: playerPosition.z,
+                    yaw: yaw,
+                    pitch: pitch
+                )
+                sendPacketToPeer(packet, peer: peer, reliable: true)
+            }
+        }
     }
 
     private func broadcastBlockDelta(_ delta: SavedBlockDelta) {
@@ -2536,6 +3426,7 @@ final class VoxelWorld: NSObject, ObservableObject {
         let packet = MultiplayerPacket(
             kind: .blockUpdate,
             senderName: localPlayerName,
+            skinRaw: nil,
             worldID: currentWorldID,
             worldName: nil,
             seed: nil,
@@ -2555,6 +3446,7 @@ final class VoxelWorld: NSObject, ObservableObject {
         let packet = MultiplayerPacket(
             kind: .playerPose,
             senderName: localPlayerName,
+            skinRaw: selectedSkin.rawValue,
             worldID: currentWorldID,
             worldName: nil,
             seed: nil,
@@ -2573,11 +3465,29 @@ final class VoxelWorld: NSObject, ObservableObject {
         switch packet.kind {
         case .requestSnapshot:
             if isHostingMultiplayer {
-                broadcastWorldSnapshotToPeers()
+                sendWorldSnapshot(to: peer)
             }
 
         case .worldSnapshot:
             guard let seed = packet.seed else { return }
+            // If already loaded into this world, simply merge additional delta chunks
+            if isInGame && currentWorldID == packet.worldID {
+                if let deltas = packet.deltas {
+                    for d in deltas {
+                        let coord = BlockCoord(x: d.x, y: d.y, z: d.z)
+                        modifiedBlocks[coord] = d.typeRaw
+                        if let dir = d.direction { blockOrientations[coord] = dir }
+                        if let wLvl = d.waterLevel {
+                            waterSpreadLevels[coord] = wLvl
+                            if wLvl == 4 { waterSourceBlocks.insert(coord) }
+                        }
+                        if d.isOpen == true { openToggleBlocks.insert(coord) }
+                    }
+                    updateStreamedChunks(force: false)
+                }
+                return
+            }
+
             saveCurrentWorld(silent: true)
             clearAllWorldState()
 
@@ -2591,8 +3501,14 @@ final class VoxelWorld: NSObject, ObservableObject {
                 for d in deltas {
                     let coord = BlockCoord(x: d.x, y: d.y, z: d.z)
                     modifiedBlocks[coord] = d.typeRaw
+                    if let dir = d.direction {
+                        blockOrientations[coord] = dir
+                    }
                     if let wLvl = d.waterLevel {
                         waterSpreadLevels[coord] = wLvl
+                        if wLvl == 4 {
+                            waterSourceBlocks.insert(coord)
+                        }
                     }
                     if d.isOpen == true {
                         openToggleBlocks.insert(coord)
@@ -2600,9 +3516,13 @@ final class VoxelWorld: NSObject, ObservableObject {
                 }
             }
 
+            if let hx = packet.px, let hy = packet.py, let hz = packet.pz {
+                playerPosition = SCNVector3(hx + 1.2, hy + 0.5, hz + 1.2)
+            }
             updateStreamedChunks(force: true)
             resolveStuckPositionIfNeeded()
             updateCameraTransform()
+            isInGame = true
             saveCurrentWorld(silent: true)
             statusToast = "Joined '\(currentWorldName)' with \(peer.displayName)!"
 
@@ -2615,8 +3535,14 @@ final class VoxelWorld: NSObject, ObservableObject {
                 blocks[coord] = bType
                 chunkBlocks[chunkForBlock(coord), default: [:]][coord] = bType
                 modifiedBlocks[coord] = d.typeRaw
+                if let dir = d.direction {
+                    blockOrientations[coord] = dir
+                }
                 if let wLvl = d.waterLevel {
                     waterSpreadLevels[coord] = wLvl
+                    if wLvl == 4 {
+                        waterSourceBlocks.insert(coord)
+                    }
                     activeWaterFrontier.insert(coord)
                 }
                 if let isOpen = d.isOpen {
@@ -2633,21 +3559,50 @@ final class VoxelWorld: NSObject, ObservableObject {
             }
             saveCurrentWorld(silent: true)
 
+            // Multi-device relay: Host relays block update to ALL other connected peers
+            if isHostingMultiplayer {
+                let others = mcSession.connectedPeers.filter { $0 != peer }
+                if !others.isEmpty {
+                    sendPacketToPeers(packet, peers: others, reliable: true)
+                }
+            }
+
         case .playerPose:
             guard let px = packet.px, let py = packet.py, let pz = packet.pz,
                   let pYaw = packet.yaw else { return }
-            updateRemotePlayerAvatar(name: peer.displayName, x: px, y: py, z: pz, yaw: pYaw)
+            let skin = packet.skinRaw.flatMap { PlayerSkin(rawValue: $0) } ?? .steve
+            let sender = packet.senderName.isEmpty ? peer.displayName : packet.senderName
+            updateRemotePlayerAvatar(name: sender, skin: skin, x: px, y: py, z: pz, yaw: pYaw)
+
+            // Multi-device relay: Host relays player pose to ALL other connected peers
+            if isHostingMultiplayer {
+                let others = mcSession.connectedPeers.filter { $0 != peer }
+                if !others.isEmpty {
+                    sendPacketToPeers(packet, peers: others, reliable: false)
+                }
+            }
+
+        case .playerLeft:
+            let leftName = packet.senderName
+            if let node = remotePlayerNodes.removeValue(forKey: leftName) {
+                node.removeFromParentNode()
+            }
+            remotePlayerSkins.removeValue(forKey: leftName)
+            connectedPlayerNames.removeAll { $0 == leftName }
+            statusToast = "\(leftName) left"
         }
     }
 
-    private func updateRemotePlayerAvatar(name: String, x: Float, y: Float, z: Float, yaw: Float) {
+    private func updateRemotePlayerAvatar(name: String, skin: PlayerSkin, x: Float, y: Float, z: Float, yaw: Float) {
         let avatarNode: SCNNode
-        if let existing = remotePlayerNodes[name] {
+        if let existing = remotePlayerNodes[name], remotePlayerSkins[name] == skin {
             avatarNode = existing
         } else {
-            let created = Self.makeBlockyPlayerAvatarNode(name: name)
+            remotePlayerNodes[name]?.removeFromParentNode()
+            let created = Self.makeBlockyPlayerAvatarNode(name: name, skin: skin)
             playersRootNode.addChildNode(created)
             remotePlayerNodes[name] = created
+            remotePlayerSkins[name] = skin
             avatarNode = created
         }
 
@@ -2658,43 +3613,263 @@ final class VoxelWorld: NSObject, ObservableObject {
         SCNTransaction.commit()
     }
 
-    private static func makeBlockyPlayerAvatarNode(name: String) -> SCNNode {
+    private static func makeBlockyPlayerAvatarNode(name: String, skin: PlayerSkin) -> SCNNode {
         let root = SCNNode()
 
-        // Classic Alpha Steve-style blocky avatar (total height ~1.75 blocks)
-        let legsGeo = SCNBox(width: 0.50, height: 0.65, length: 0.28, chamferRadius: 0.0)
-        let legsMat = SCNMaterial()
-        legsMat.diffuse.contents = UIColor(red: 0.20, green: 0.28, blue: 0.68, alpha: 1.0)
-        legsGeo.materials = [legsMat]
-        let legsNode = SCNNode(geometry: legsGeo)
-        legsNode.position = SCNVector3(0, 0.325, 0)
-        root.addChildNode(legsNode)
+        // Helper to quickly make colored material
+        func makeMat(_ color: UIColor, emission: UIColor? = nil) -> SCNMaterial {
+            let m = SCNMaterial()
+            m.diffuse.contents = color
+            if let em = emission {
+                m.emission.contents = em
+            }
+            return m
+        }
 
-        let torsoGeo = SCNBox(width: 0.55, height: 0.65, length: 0.30, chamferRadius: 0.0)
-        let torsoMat = SCNMaterial()
-        torsoMat.diffuse.contents = UIColor(red: 0.15, green: 0.68, blue: 0.72, alpha: 1.0)
+        let pantsMat = makeMat(skin.legsColor)
+        let bootsMat = makeMat(skin.bootsColor)
+        let torsoMat = makeMat(skin.torsoColor)
+        let headMat = makeMat(skin.headColor)
+        let hairMat = makeMat(skin.hairColor)
+        let accentMat = makeMat(skin.accentColor, emission: skin.accentColor.withAlphaComponent(0.4))
+        let whiteMat = makeMat(.white, emission: UIColor(white: 0.9, alpha: 1.0))
+        let eyeMat = makeMat(skin.eyeColor, emission: skin.eyeColor.withAlphaComponent(0.6))
+        let blackMat = makeMat(.black)
+
+        // 1. LEGS (Left & Right with Pants and Boots)
+        for xOffset in [-0.13, 0.13] as [Float] {
+            // Upper leg / pants
+            let legGeo = SCNBox(width: 0.22, height: 0.44, length: 0.26, chamferRadius: 0.0)
+            legGeo.materials = [pantsMat]
+            let legNode = SCNNode(geometry: legGeo)
+            legNode.position = SCNVector3(xOffset, 0.43, 0)
+            root.addChildNode(legNode)
+
+            // Boot / footwear cuff
+            let bootGeo = SCNBox(width: 0.24, height: 0.22, length: 0.28, chamferRadius: 0.0)
+            bootGeo.materials = [bootsMat]
+            let bootNode = SCNNode(geometry: bootGeo)
+            bootNode.position = SCNVector3(xOffset, 0.11, 0.01)
+            root.addChildNode(bootNode)
+        }
+
+        // 2. TORSO & WAISTBAND
+        let torsoGeo = SCNBox(width: 0.50, height: 0.62, length: 0.28, chamferRadius: 0.0)
         torsoGeo.materials = [torsoMat]
         let torsoNode = SCNNode(geometry: torsoGeo)
-        torsoNode.position = SCNVector3(0, 0.975, 0)
+        torsoNode.position = SCNVector3(0, 0.96, 0)
         root.addChildNode(torsoNode)
 
-        let headGeo = SCNBox(width: 0.50, height: 0.50, length: 0.50, chamferRadius: 0.0)
-        let headMat = SCNMaterial()
-        headMat.diffuse.contents = UIColor(red: 0.85, green: 0.65, blue: 0.50, alpha: 1.0)
+        // Belt / Waist Trim
+        let beltGeo = SCNBox(width: 0.52, height: 0.10, length: 0.30, chamferRadius: 0.0)
+        beltGeo.materials = [bootsMat]
+        let beltNode = SCNNode(geometry: beltGeo)
+        beltNode.position = SCNVector3(0, 0.68, 0)
+        root.addChildNode(beltNode)
+
+        // Belt Buckle
+        let buckleGeo = SCNBox(width: 0.14, height: 0.08, length: 0.32, chamferRadius: 0.0)
+        buckleGeo.materials = [accentMat]
+        let buckleNode = SCNNode(geometry: buckleGeo)
+        buckleNode.position = SCNVector3(0, 0.68, 0.005)
+        root.addChildNode(buckleNode)
+
+        // Torso Emblem / Chest Accent
+        let chestGeo = SCNBox(width: 0.24, height: 0.24, length: 0.30, chamferRadius: 0.0)
+        chestGeo.materials = [accentMat]
+        let chestNode = SCNNode(geometry: chestGeo)
+        chestNode.position = SCNVector3(0, 1.04, 0.005)
+        root.addChildNode(chestNode)
+
+        // Optional Backpack (Astronaut life support, Miner supply bag, Arctic pack)
+        if skin.hasBackpack {
+            let packGeo = SCNBox(width: 0.32, height: 0.38, length: 0.14, chamferRadius: 0.0)
+            packGeo.materials = [accentMat]
+            let packNode = SCNNode(geometry: packGeo)
+            packNode.position = SCNVector3(0, 0.98, -0.20)
+            root.addChildNode(packNode)
+        }
+
+        // 3. ARMS (Left & Right with Sleeves, Hands, and Shoulder Pauldrons)
+        for armX in [-0.36, 0.36] as [Float] {
+            // Upper sleeve
+            let sleeveGeo = SCNBox(width: 0.20, height: 0.34, length: 0.24, chamferRadius: 0.0)
+            sleeveGeo.materials = [torsoMat]
+            let sleeveNode = SCNNode(geometry: sleeveGeo)
+            sleeveNode.position = SCNVector3(armX, 1.10, 0)
+            root.addChildNode(sleeveNode)
+
+            // Hand / Forearm
+            let handGeo = SCNBox(width: 0.18, height: 0.28, length: 0.22, chamferRadius: 0.0)
+            handGeo.materials = [headMat]
+            let handNode = SCNNode(geometry: handGeo)
+            handNode.position = SCNVector3(armX, 0.79, 0)
+            root.addChildNode(handNode)
+
+            // Shoulder Cuff / Trim
+            let shoulderGeo = SCNBox(width: 0.22, height: 0.08, length: 0.26, chamferRadius: 0.0)
+            shoulderGeo.materials = [accentMat]
+            let shoulderNode = SCNNode(geometry: shoulderGeo)
+            shoulderNode.position = SCNVector3(armX, 1.23, 0)
+            root.addChildNode(shoulderNode)
+        }
+
+        // 4. HEAD & HAIR
+        let headGeo = SCNBox(width: 0.46, height: 0.46, length: 0.46, chamferRadius: 0.0)
         headGeo.materials = [headMat]
         let headNode = SCNNode(geometry: headGeo)
-        headNode.position = SCNVector3(0, 1.55, 0)
+        headNode.position = SCNVector3(0, 1.54, 0)
         root.addChildNode(headNode)
 
-        let textGeo = SCNText(string: name, extrusionDepth: 0.2)
-        textGeo.font = UIFont.monospacedSystemFont(ofSize: 3.5, weight: .bold)
-        textGeo.firstMaterial?.diffuse.contents = UIColor.white
-        textGeo.firstMaterial?.emission.contents = UIColor.white
+        // Hair / Helmet Top
+        let hairTopGeo = SCNBox(width: 0.48, height: 0.16, length: 0.48, chamferRadius: 0.0)
+        hairTopGeo.materials = [hairMat]
+        let hairTopNode = SCNNode(geometry: hairTopGeo)
+        hairTopNode.position = SCNVector3(0, 1.69, 0)
+        root.addChildNode(hairTopNode)
+
+        // Hair Back & Sides
+        let hairBackGeo = SCNBox(width: 0.48, height: 0.30, length: 0.24, chamferRadius: 0.0)
+        hairBackGeo.materials = [hairMat]
+        let hairBackNode = SCNNode(geometry: hairBackGeo)
+        hairBackNode.position = SCNVector3(0, 1.54, -0.12)
+        root.addChildNode(hairBackNode)
+
+        // 5. FACIAL TEXTURE FEATURES (Eyes & Eyepatch)
+        // Left Eye (Sclera + Pupil)
+        let leftScleraGeo = SCNBox(width: 0.08, height: 0.06, length: 0.02, chamferRadius: 0.0)
+        leftScleraGeo.materials = [whiteMat]
+        let leftScleraNode = SCNNode(geometry: leftScleraGeo)
+        leftScleraNode.position = SCNVector3(-0.11, 1.54, 0.233)
+        root.addChildNode(leftScleraNode)
+
+        let leftPupilGeo = SCNBox(width: 0.04, height: 0.06, length: 0.025, chamferRadius: 0.0)
+        leftPupilGeo.materials = [eyeMat]
+        let leftPupilNode = SCNNode(geometry: leftPupilGeo)
+        leftPupilNode.position = SCNVector3(-0.11, 1.54, 0.235)
+        root.addChildNode(leftPupilNode)
+
+        // Right Eye (Or Eyepatch for Pirate)
+        if skin.hasEyepatch {
+            let patchGeo = SCNBox(width: 0.12, height: 0.10, length: 0.025, chamferRadius: 0.0)
+            patchGeo.materials = [blackMat]
+            let patchNode = SCNNode(geometry: patchGeo)
+            patchNode.position = SCNVector3(0.11, 1.54, 0.235)
+            root.addChildNode(patchNode)
+        } else {
+            let rightScleraGeo = SCNBox(width: 0.08, height: 0.06, length: 0.02, chamferRadius: 0.0)
+            rightScleraGeo.materials = [whiteMat]
+            let rightScleraNode = SCNNode(geometry: rightScleraGeo)
+            rightScleraNode.position = SCNVector3(0.11, 1.54, 0.233)
+            root.addChildNode(rightScleraNode)
+
+            let rightPupilGeo = SCNBox(width: 0.04, height: 0.06, length: 0.025, chamferRadius: 0.0)
+            rightPupilGeo.materials = [eyeMat]
+            let rightPupilNode = SCNNode(geometry: rightPupilGeo)
+            rightPupilNode.position = SCNVector3(0.11, 1.54, 0.235)
+            root.addChildNode(rightPupilNode)
+        }
+
+        // 6. DISTINCTIVE SKIN ACCESSORY FEATURES
+        switch skin.featureStyle {
+        case .minerLamp:
+            let lampGeo = SCNBox(width: 0.12, height: 0.12, length: 0.08, chamferRadius: 0.0)
+            lampGeo.materials = [accentMat]
+            let lampNode = SCNNode(geometry: lampGeo)
+            lampNode.position = SCNVector3(0, 1.70, 0.26)
+            root.addChildNode(lampNode)
+
+        case .spaceVisor:
+            let visorGeo = SCNBox(width: 0.42, height: 0.20, length: 0.08, chamferRadius: 0.0)
+            visorGeo.materials = [accentMat]
+            let visorNode = SCNNode(geometry: visorGeo)
+            visorNode.position = SCNVector3(0, 1.54, 0.22)
+            root.addChildNode(visorNode)
+
+        case .visor:
+            let slitGeo = SCNBox(width: 0.48, height: 0.08, length: 0.48, chamferRadius: 0.0)
+            slitGeo.materials = [accentMat]
+            let slitNode = SCNNode(geometry: slitGeo)
+            slitNode.position = SCNVector3(0, 1.58, 0.01)
+            root.addChildNode(slitNode)
+
+        case .ninjaMask:
+            let maskGeo = SCNBox(width: 0.44, height: 0.16, length: 0.08, chamferRadius: 0.0)
+            maskGeo.materials = [torsoMat]
+            let maskNode = SCNNode(geometry: maskGeo)
+            maskNode.position = SCNVector3(0, 1.44, 0.21)
+            root.addChildNode(maskNode)
+
+        case .horns:
+            for hornX in [-0.25, 0.25] as [Float] {
+                let hornGeo = SCNBox(width: 0.08, height: 0.18, length: 0.08, chamferRadius: 0.0)
+                hornGeo.materials = [accentMat]
+                let hornNode = SCNNode(geometry: hornGeo)
+                hornNode.position = SCNVector3(hornX, 1.76, 0)
+                hornNode.eulerAngles = SCNVector3(0, 0, hornX > 0 ? -0.3 : 0.3)
+                root.addChildNode(hornNode)
+            }
+
+        case .wizardPoint:
+            let pointGeo = SCNBox(width: 0.20, height: 0.24, length: 0.20, chamferRadius: 0.0)
+            pointGeo.materials = [hairMat]
+            let pointNode = SCNNode(geometry: pointGeo)
+            pointNode.position = SCNVector3(0, 1.86, 0)
+            root.addChildNode(pointNode)
+
+            let tipGeo = SCNBox(width: 0.10, height: 0.16, length: 0.10, chamferRadius: 0.0)
+            tipGeo.materials = [accentMat]
+            let tipNode = SCNNode(geometry: tipGeo)
+            tipNode.position = SCNVector3(0, 2.02, -0.03)
+            root.addChildNode(tipNode)
+
+        case .cybernetic:
+            let cyberGeo = SCNBox(width: 0.10, height: 0.18, length: 0.10, chamferRadius: 0.0)
+            cyberGeo.materials = [accentMat]
+            let cyberNode = SCNNode(geometry: cyberGeo)
+            cyberNode.position = SCNVector3(0.24, 1.62, 0.10)
+            root.addChildNode(cyberNode)
+
+        case .furHood:
+            let hoodGeo = SCNBox(width: 0.50, height: 0.48, length: 0.08, chamferRadius: 0.0)
+            hoodGeo.materials = [hairMat]
+            let hoodNode = SCNNode(geometry: hoodGeo)
+            hoodNode.position = SCNVector3(0, 1.54, 0.21)
+            root.addChildNode(hoodNode)
+
+        case .classic:
+            break
+        }
+
+        // 7. 3D BILLBOARD FLOATING NAME TAG (User Name Directly On Top Of Player Head)
+        // User requested: ONLY show username (no skin text) and place right on top of player.
+        let tagText = name
+        let textGeo = SCNText(string: tagText, extrusionDepth: 0.10)
+        textGeo.font = UIFont.monospacedSystemFont(ofSize: 2.2, weight: .black)
+        textGeo.alignmentMode = CATextLayerAlignmentMode.center.rawValue
+        let textMat = SCNMaterial()
+        textMat.diffuse.contents = UIColor.white
+        textMat.emission.contents = UIColor(white: 0.95, alpha: 1.0)
+        textGeo.materials = [textMat]
+
         let textNode = SCNNode(geometry: textGeo)
         let (minVec, maxVec) = textNode.boundingBox
-        let textWidth = maxVec.x - minVec.x
-        textNode.scale = SCNVector3(0.08, 0.08, 0.08)
-        textNode.position = SCNVector3(-textWidth * 0.04, 1.95, 0)
+        let scaleFactor: Float = 0.065
+        let textCenterX = (minVec.x + maxVec.x) * 0.5 * scaleFactor
+
+        // Place right directly above player head / hat
+        let nametagY: Float
+        switch skin.featureStyle {
+        case .wizardPoint:
+            nametagY = 2.15
+        case .horns:
+            nametagY = 1.94
+        default:
+            nametagY = 1.86
+        }
+
+        textNode.scale = SCNVector3(scaleFactor, scaleFactor, scaleFactor)
+        textNode.position = SCNVector3(-textCenterX, nametagY, 0)
         let billboard = SCNBillboardConstraint()
         billboard.freeAxes = .Y
         textNode.constraints = [billboard]
@@ -2713,11 +3888,48 @@ extension VoxelWorld: MCSessionDelegate, MCNearbyServiceAdvertiserDelegate, MCNe
             if state == .connected {
                 self.statusToast = "\(peerID.displayName) connected!"
                 if self.isHostingMultiplayer {
-                    self.broadcastWorldSnapshotToPeers()
+                    // Send world snapshot to the joined peer after small delay to let handshake finalize
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 250_000_000)
+                        self.sendWorldSnapshot(to: peerID)
+                    }
                 } else {
-                    let req = MultiplayerPacket(
-                        kind: .requestSnapshot,
-                        senderName: self.localPlayerName,
+                    // Guest requests snapshot after 350ms if not already received
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 350_000_000)
+                        let req = MultiplayerPacket(
+                            kind: .requestSnapshot,
+                            senderName: self.localPlayerName,
+                            skinRaw: self.selectedSkin.rawValue,
+                            worldID: nil,
+                            worldName: nil,
+                            seed: nil,
+                            deltas: nil,
+                            blockDelta: nil,
+                            px: nil,
+                            py: nil,
+                            pz: nil,
+                            yaw: nil,
+                            pitch: nil
+                        )
+                        self.sendPacketToPeer(req, peer: peerID, reliable: true)
+                    }
+                }
+            } else if state == .notConnected {
+                let leftName = peerID.displayName
+                if let node = self.remotePlayerNodes.removeValue(forKey: leftName) {
+                    node.removeFromParentNode()
+                }
+                self.remotePlayerSkins.removeValue(forKey: leftName)
+                self.connectedPlayerNames.removeAll { $0 == leftName }
+                self.statusToast = "\(leftName) left"
+
+                // Host relays playerLeft packet so all other connected devices remove their avatar
+                if self.isHostingMultiplayer {
+                    let leftPacket = MultiplayerPacket(
+                        kind: .playerLeft,
+                        senderName: leftName,
+                        skinRaw: nil,
                         worldID: nil,
                         worldName: nil,
                         seed: nil,
@@ -2729,13 +3941,8 @@ extension VoxelWorld: MCSessionDelegate, MCNearbyServiceAdvertiserDelegate, MCNe
                         yaw: nil,
                         pitch: nil
                     )
-                    self.sendPacket(req, reliable: true)
+                    self.sendPacket(leftPacket, reliable: true)
                 }
-            } else if state == .notConnected {
-                if let node = self.remotePlayerNodes.removeValue(forKey: peerID.displayName) {
-                    node.removeFromParentNode()
-                }
-                self.statusToast = "\(peerID.displayName) left"
             }
         }
     }
@@ -2758,8 +3965,30 @@ extension VoxelWorld: MCSessionDelegate, MCNearbyServiceAdvertiserDelegate, MCNe
         invitationHandler: @escaping (Bool, MCSession?) -> Void
     ) {
         Task { @MainActor in
-            invitationHandler(true, self.mcSession)
+            guard self.isMultiplayerEnabled && self.isInGame else {
+                invitationHandler(false, nil)
+                return
+            }
+
+            // If we are currently in a world and hosting, auto-accept guest connections
+            if self.isHostingMultiplayer {
+                self.statusToast = "\(peerID.displayName) connected to your world!"
+                invitationHandler(true, self.mcSession)
+            } else {
+                // Otherwise present the pop-up invitation asking if user would like to join
+                self.activeJoinPrompt = MultiplayerJoinPrompt(
+                    peerID: peerID,
+                    playerName: peerID.displayName,
+                    worldName: self.currentWorldName,
+                    isDirectInvitation: true,
+                    invitationHandler: invitationHandler
+                )
+            }
         }
+    }
+
+    nonisolated func advertiser(_ advertiser: MCNearbyServiceAdvertiser, didNotStartAdvertisingPeer error: Error) {
+        print("[Multiplayer] Advertiser did not start: \(error.localizedDescription)")
     }
 
     nonisolated func browser(
@@ -2768,17 +3997,40 @@ extension VoxelWorld: MCSessionDelegate, MCNearbyServiceAdvertiserDelegate, MCNe
         withDiscoveryInfo info: [String: String]?
     ) {
         let wName = info?["worldName"] ?? "\(peerID.displayName)'s World"
+        let pName = info?["playerName"] ?? peerID.displayName
+        let skin = info?["skin"].flatMap { PlayerSkin(rawValue: $0) } ?? .steve
+        let inGame = (info?["isInGame"] == "1")
+
         Task { @MainActor in
-            let host = DiscoveredLocalHost(id: peerID.displayName, peerID: peerID, worldName: wName)
-            if !self.discoveredHosts.contains(where: { $0.id == host.id }) {
+            guard self.isMultiplayerEnabled else { return }
+            let host = DiscoveredLocalHost(
+                id: peerID.displayName,
+                peerID: peerID,
+                worldName: wName,
+                playerName: pName,
+                skin: skin,
+                isInGame: inGame
+            )
+            if let idx = self.discoveredHosts.firstIndex(where: { $0.id == host.id }) {
+                self.discoveredHosts[idx] = host
+            } else {
                 self.discoveredHosts.append(host)
             }
+
+            self.checkAndTriggerJoinPrompt(for: host)
         }
     }
 
     nonisolated func browser(_ browser: MCNearbyServiceBrowser, lostPeer peerID: MCPeerID) {
         Task { @MainActor in
             self.discoveredHosts.removeAll { $0.id == peerID.displayName }
+            if self.activeJoinPrompt?.peerID == peerID {
+                self.activeJoinPrompt = nil
+            }
         }
+    }
+
+    nonisolated func browser(_ browser: MCNearbyServiceBrowser, didNotStartBrowsingForPeers error: Error) {
+        print("[Multiplayer] Browser did not start: \(error.localizedDescription)")
     }
 }

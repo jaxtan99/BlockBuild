@@ -12,16 +12,17 @@ enum BlockType: Int, CaseIterable, Identifiable, Codable {
     case sand = 6
     case glass = 7
     case door = 8
-    case trapdoor = 9
+    case roof = 9
     case grass = 10
     case dirt = 11
+    case slab = 12
 
     var id: Int { rawValue }
 
     var displayName: String {
         switch self {
         case .stone: return "Cobble"
-        case .woodLog: return "Wood Log"
+        case .woodLog: return "Logs"
         case .woodPlanks: return "Planks"
         case .leaves: return "Leaves"
         case .water: return "Water"
@@ -29,33 +30,35 @@ enum BlockType: Int, CaseIterable, Identifiable, Codable {
         case .sand: return "Sand"
         case .glass: return "Glass"
         case .door: return "Door"
-        case .trapdoor: return "Trapdoor"
+        case .roof: return "Roof"
         case .grass: return "Grass"
         case .dirt: return "Dirt"
+        case .slab: return "Slab"
         }
     }
 
     var fullName: String {
         switch self {
         case .stone: return "Cobblestone"
-        case .woodLog: return "Wooden Log"
-        case .woodPlanks: return "Wooden Planks"
+        case .woodLog: return "Logs"
+        case .woodPlanks: return "Planks"
         case .leaves: return "Leaves"
         case .water: return "Water"
-        case .smoothStone: return "Smooth Stone"
+        case .smoothStone: return "Stone"
         case .sand: return "Sand"
         case .glass: return "Glass"
-        case .door: return "Wooden Door"
-        case .trapdoor: return "Wooden Trapdoor"
-        case .grass: return "Grass Block"
+        case .door: return "Door"
+        case .roof: return "Roof"
+        case .grass: return "Grass"
         case .dirt: return "Dirt"
+        case .slab: return "Slab"
         }
     }
 
     /// Blocks that do not fully occlude neighbor faces (transparent or non-full-cube geometry)
     var isTransparent: Bool {
         switch self {
-        case .water, .glass, .door, .trapdoor:
+        case .water, .glass, .door, .roof, .slab:
             return true
         default:
             return false
@@ -67,9 +70,9 @@ enum BlockType: Int, CaseIterable, Identifiable, Codable {
         return self != .water
     }
 
-    /// Doors and trapdoors can be toggled open/closed
+    /// Doors can be toggled open/closed
     var isToggleable: Bool {
-        return self == .door || self == .trapdoor
+        return self == .door
     }
 
     private static var iconCache: [BlockType: UIImage] = [:]
@@ -141,7 +144,7 @@ enum BlockType: Int, CaseIterable, Identifiable, Codable {
             mat.isDoubleSided = false
             mat.writesToDepthBuffer = true
             mat.transparencyMode = .aOne
-        case .door, .trapdoor:
+        case .door:
             mat.lightingModel = .lambert
             mat.isDoubleSided = true
             mat.writesToDepthBuffer = true
@@ -177,8 +180,8 @@ enum BlockType: Int, CaseIterable, Identifiable, Codable {
         let size = 16
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1.0
-        // All solid blocks including Grass, Dirt, Leaves, Stone, Sand, and Wood are 100% opaque (no alpha channel)
-        format.opaque = (type != .water && type != .glass && type != .door && type != .trapdoor)
+        // All solid blocks including Grass, Dirt, Leaves, Stone, Sand, Wood, and Cobble Roof are 100% opaque (no alpha channel)
+        format.opaque = (type != .water && type != .glass && type != .door)
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: size, height: size), format: format)
 
         return renderer.image { ctx in
@@ -263,20 +266,20 @@ enum BlockType: Int, CaseIterable, Identifiable, Codable {
             }
             return UIColor(red: 0.68, green: 0.52, blue: 0.29, alpha: 1.0)
 
-        case .trapdoor:
-            let isBorder = (x <= 2 || x >= 13 || y <= 2 || y >= 13)
-            let isCrossBar = (x == 7 || x == 8 || y == 7 || y == 8)
-            let isHinge = ((x == 1 || x == 14) && (y == 4 || y == 11))
-            if isHinge {
-                return UIColor(red: 0.32, green: 0.32, blue: 0.34, alpha: 1.0)
+        case .roof, .slab:
+            let mortarY = (y % 4 == 0)
+            let stagger = (y / 4) % 2 == 1
+            let stoneX = (x + (stagger ? 4 : 0)) % 8 == 0
+            if mortarY || stoneX {
+                return UIColor(red: 0.22, green: 0.22, blue: 0.24, alpha: 1.0)
             }
-            if isBorder || isCrossBar {
-                let grain = (x + y + (hash & 1)) % 3 == 0
-                return grain
-                    ? UIColor(red: 0.54, green: 0.39, blue: 0.20, alpha: 1.0)
-                    : UIColor(red: 0.66, green: 0.50, blue: 0.28, alpha: 1.0)
+            let level = cobblePattern[y & 15][x & 15]
+            switch level {
+            case 0: return UIColor(red: 0.32, green: 0.32, blue: 0.34, alpha: 1.0)
+            case 1: return UIColor(red: 0.44, green: 0.44, blue: 0.46, alpha: 1.0)
+            case 2: return UIColor(red: 0.58, green: 0.58, blue: 0.60, alpha: 1.0)
+            default: return UIColor(red: 0.70, green: 0.70, blue: 0.72, alpha: 1.0)
             }
-            return UIColor(red: 0.20, green: 0.14, blue: 0.08, alpha: 0.12)
 
         case .leaves:
             let pattern = ((x * 3 + y * 5) ^ (hash >> 2)) & 7
