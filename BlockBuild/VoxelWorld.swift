@@ -428,7 +428,7 @@ struct ControlLayoutConfig: Codable, Equatable {
     var hotbarScale: CGFloat = 1.0
     var controlOpacity: Double = 0.92
     var lookSensitivity: Float = 1.0
-    var movementSpeedMultiplier: Float = 1.0
+    var movementSpeedMultiplier: Float = 0.2
     var swapLeftRight: Bool = false
 
     static let `default` = ControlLayoutConfig()
@@ -459,7 +459,7 @@ struct ControlLayoutConfig: Codable, Equatable {
         hotbarScale: CGFloat = 1.0,
         controlOpacity: Double = 0.92,
         lookSensitivity: Float = 1.0,
-        movementSpeedMultiplier: Float = 1.0,
+        movementSpeedMultiplier: Float = 0.2,
         swapLeftRight: Bool = false
     ) {
         self.joystickOffsetX = joystickOffsetX
@@ -499,7 +499,7 @@ struct ControlLayoutConfig: Codable, Equatable {
         hotbarScale = try container.decodeIfPresent(CGFloat.self, forKey: .hotbarScale) ?? 1.0
         controlOpacity = try container.decodeIfPresent(Double.self, forKey: .controlOpacity) ?? 0.92
         lookSensitivity = try container.decodeIfPresent(Float.self, forKey: .lookSensitivity) ?? 1.0
-        movementSpeedMultiplier = try container.decodeIfPresent(Float.self, forKey: .movementSpeedMultiplier) ?? 1.0
+        movementSpeedMultiplier = try container.decodeIfPresent(Float.self, forKey: .movementSpeedMultiplier) ?? 0.2
         swapLeftRight = try container.decodeIfPresent(Bool.self, forKey: .swapLeftRight) ?? false
     }
 }
@@ -961,7 +961,7 @@ struct SeededPerlinNoise {
 
 @MainActor
 final class VoxelWorld: NSObject, ObservableObject {
-    // 500 x 500 Block World Bounds (-250 ..< 250 on X and Z)
+    // Infinite Procedural Voxel World Bounds (Dynamic infinite generation on X and Z)
     let worldSize: Int = 500
     let halfWorld: Int = 250
     let seaLevel: Int = 4
@@ -1007,7 +1007,7 @@ final class VoxelWorld: NSObject, ObservableObject {
     ]
     @Published var targetedBlockType: BlockType? = nil
     @Published var isTargetedBlockOpen: Bool = false
-    @Published var statusToast: String = "500x500 World Ready!"
+    @Published var statusToast: String = "Infinite World Ready!"
     @Published var isFlying: Bool = true
     @Published var isMusicEnabled: Bool = true
 
@@ -1233,6 +1233,11 @@ final class VoxelWorld: NSObject, ObservableObject {
         if let data = UserDefaults.standard.data(forKey: controlLayoutKey),
            let decoded = try? JSONDecoder().decode(ControlLayoutConfig.self, from: data) {
             controlLayout = decoded
+            if UserDefaults.standard.object(forKey: "blockbuild_speed_v02_migrated") == nil {
+                controlLayout.movementSpeedMultiplier = 0.2
+                UserDefaults.standard.set(true, forKey: "blockbuild_speed_v02_migrated")
+                saveControlLayout()
+            }
         }
     }
 
@@ -1318,8 +1323,8 @@ final class VoxelWorld: NSObject, ObservableObject {
 
     private func setupScene() {
         scene.background.contents = UIColor(red: 0.60, green: 0.80, blue: 1.0, alpha: 1.0)
-        scene.fogStartDistance = 20.0
-        scene.fogEndDistance = 32.0
+        scene.fogStartDistance = 0.0
+        scene.fogEndDistance = 0.0
         scene.fogColor = UIColor(red: 0.65, green: 0.83, blue: 1.0, alpha: 1.0)
 
         let ambientNode = SCNNode()
@@ -1343,7 +1348,7 @@ final class VoxelWorld: NSObject, ObservableObject {
         let camera = SCNCamera()
         camera.fieldOfView = 74
         camera.zNear = 0.1
-        camera.zFar = 95.0
+        camera.zFar = 800.0
         cameraNode.camera = camera
         updateCameraTransform()
         scene.rootNode.addChildNode(cameraNode)
@@ -1377,10 +1382,11 @@ final class VoxelWorld: NSObject, ObservableObject {
     }
 
     func applyRenderDistance() {
-        let viewDist = Float(renderDistance * chunkSize)
-        cameraNode.camera?.zFar = Double(max(120.0, viewDist * 1.8))
-        scene.fogStartDistance = CGFloat(viewDist * 0.70)
-        scene.fogEndDistance = CGFloat(viewDist * 1.15)
+        // Render distance strictly governs horizontal chunk streaming (X and Z)
+        // and does NOT restrict or fog out the vertical Y axis (sky islands, mountain peaks, and void).
+        cameraNode.camera?.zFar = 800.0
+        scene.fogStartDistance = 0.0
+        scene.fogEndDistance = 0.0
         updateStreamedChunks(force: true)
     }
 
@@ -1390,7 +1396,7 @@ final class VoxelWorld: NSObject, ObservableObject {
         statusToast = isMusicEnabled ? "Music: ON" : "Music: OFF"
     }
 
-    // MARK: - 500x500 Procedural World Generation Engine
+    // MARK: - Infinite Procedural World Generation Engine
 
     func enterGame() {
         isInGame = true
@@ -1461,7 +1467,7 @@ final class VoxelWorld: NSObject, ObservableObject {
         updateStreamedChunks(force: true)
         resolveStuckPositionIfNeeded()
         updateCameraTransform()
-        statusToast = "\(type.displayName) (\(type == .skyIslands ? "Open Void" : "500x500"))"
+        statusToast = "\(type.displayName) (\(type == .skyIslands ? "Open Void" : "Infinite"))"
     }
 
     private func configureNoiseGenerators(seed: Int) {
@@ -1567,19 +1573,13 @@ final class VoxelWorld: NSObject, ObservableObject {
         let endX = startX + chunkSize
         let endZ = startZ + chunkSize
 
-        if currentWorldType != .skyIslands {
-            guard endX > -halfWorld && startX < halfWorld && endZ > -halfWorld && startZ < halfWorld else {
-                return
-            }
-        }
-
         var localBlocks: [BlockCoord: BlockType] = [:]
         var heights: [Int: [Int: Int]] = [:]
 
-        let minX = (currentWorldType == .skyIslands) ? startX : max(-halfWorld, startX)
-        let maxX = (currentWorldType == .skyIslands) ? endX : min(halfWorld, endX)
-        let minZ = (currentWorldType == .skyIslands) ? startZ : max(-halfWorld, startZ)
-        let maxZ = (currentWorldType == .skyIslands) ? endZ : min(halfWorld, endZ)
+        let minX = startX
+        let maxX = endX
+        let minZ = startZ
+        let maxZ = endZ
 
         if currentWorldType == .flat {
             for x in minX..<maxX {
@@ -1753,7 +1753,7 @@ final class VoxelWorld: NSObject, ObservableObject {
             if (chunk.cx == 0 && chunk.cz == 0) || chunkHash < 14 {
                 let midX = startX + chunkSize / 2
                 let midZ = startZ + chunkSize / 2
-                let canBuildHere = (currentWorldType == .skyIslands) ? true : (midX >= -halfWorld + 3 && midX < halfWorld - 3 && midZ >= -halfWorld + 3 && midZ < halfWorld - 3)
+                let canBuildHere = true
                 if canBuildHere, let rawBase = heights[midX]?[midZ], rawBase > 0 && rawBase < 30 {
                     let baseH = max(rawBase, seaLevel) + 1
                     if chunkHash % 2 == 0 {
@@ -1855,10 +1855,10 @@ final class VoxelWorld: NSObject, ObservableObject {
         // 4. Deterministic Trees (Tailored by World Type)
         if currentWorldType == .desert {
             // Desert: Oasis Palm Trees & Desert Shrubs
-            let treeMinX = max(-halfWorld + 2, startX + 2)
-            let treeMaxX = min(halfWorld - 2, endX - 2)
-            let treeMinZ = max(-halfWorld + 2, startZ + 2)
-            let treeMaxZ = min(halfWorld - 2, endZ - 2)
+            let treeMinX = startX + 2
+            let treeMaxX = endX - 2
+            let treeMinZ = startZ + 2
+            let treeMaxZ = endZ - 2
             for x in treeMinX..<treeMaxX {
                 for z in treeMinZ..<treeMaxZ {
                     guard let h = heights[x]?[z], (h == seaLevel + 1 || h == seaLevel + 2) else { continue }
@@ -1917,10 +1917,10 @@ final class VoxelWorld: NSObject, ObservableObject {
         } else if currentWorldType != .flat {
             // Standard & Amplified Peaks Trees
             let maxTreeElevation = (currentWorldType == .amplified) ? 24 : 14
-            let treeMinX = max(-halfWorld + 2, startX + 2)
-            let treeMaxX = min(halfWorld - 2, endX - 2)
-            let treeMinZ = max(-halfWorld + 2, startZ + 2)
-            let treeMaxZ = min(halfWorld - 2, endZ - 2)
+            let treeMinX = startX + 2
+            let treeMaxX = endX - 2
+            let treeMinZ = startZ + 2
+            let treeMaxZ = endZ - 2
             for x in treeMinX..<treeMaxX {
                 for z in treeMinZ..<treeMaxZ {
                     guard let h = heights[x]?[z], h > seaLevel && h < maxTreeElevation else { continue }
@@ -1991,11 +1991,7 @@ final class VoxelWorld: NSObject, ObservableObject {
         for dx in -renderDistance...renderDistance {
             for dz in -renderDistance...renderDistance {
                 let c = ChunkCoord(cx: playerChunk.cx + dx, cz: playerChunk.cz + dz)
-                if currentWorldType == .skyIslands ||
-                   (c.cx * chunkSize < halfWorld && (c.cx + 1) * chunkSize > -halfWorld &&
-                    c.cz * chunkSize < halfWorld && (c.cz + 1) * chunkSize > -halfWorld) {
-                    desiredChunks.insert(c)
-                }
+                desiredChunks.insert(c)
             }
         }
 
@@ -2092,8 +2088,6 @@ final class VoxelWorld: NSObject, ObservableObject {
 
         for d in dirs {
             let first = BlockCoord(x: start.x + d.dx, y: start.y, z: start.z + d.dz)
-            guard first.x >= -halfWorld && first.x < halfWorld &&
-                  first.z >= -halfWorld && first.z < halfWorld else { continue }
 
             // Can water enter `first`?
             if let existing = blocks[first], existing != .water {
@@ -2115,9 +2109,7 @@ final class VoxelWorld: NSObject, ObservableObject {
                 if dist < 4 {
                     for nd in dirs {
                         let next = BlockCoord(x: curr.x + nd.dx, y: curr.y, z: curr.z + nd.dz)
-                        if !visited.contains(next),
-                           next.x >= -halfWorld && next.x < halfWorld &&
-                           next.z >= -halfWorld && next.z < halfWorld {
+                        if !visited.contains(next) {
                             if let b = blocks[next], b != .water {
                                 continue
                             }
@@ -3072,13 +3064,6 @@ final class VoxelWorld: NSObject, ObservableObject {
             return
         }
 
-        if currentWorldType != .skyIslands {
-            guard placeCoord.x >= -halfWorld && placeCoord.x < halfWorld &&
-                  placeCoord.z >= -halfWorld && placeCoord.z < halfWorld else {
-                statusToast = "Reached 500x500 world border!"
-                return
-            }
-        }
 
         if selectedBlock.hasHitbox && !selectedBlock.isToggleable &&
            doesPlayerIntersectBlock(at: placeCoord, playerPos: playerPosition) {
@@ -3482,9 +3467,7 @@ final class VoxelWorld: NSObject, ObservableObject {
                 statusToast = "Fell into the void! Respawned on Sky Island."
             }
         } else {
-            let bound = Float(halfWorld - 1)
-            pos.x = max(-bound, min(bound, pos.x))
-            pos.z = max(-bound, min(bound, pos.z))
+            // Infinite world: No horizontal clamping on X and Z!
             let maxY: Float = (currentWorldType == .amplified) ? 50.0 : 42.0
             pos.y = max(0.5 + playerFeetOffset, min(maxY, pos.y))
         }

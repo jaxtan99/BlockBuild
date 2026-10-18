@@ -10,6 +10,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [1.4.5] - 2026-10-18
+
+### Changed
+- **Default Speed Set to 0.2 (Labeled as 1.0x)**:
+  - Adjusted internal `movementSpeedMultiplier` to default to `0.2` in `ControlLayoutConfig` with physics velocity running at the `0.2` base speed.
+  - Automatically migrated existing saved settings to the new `0.2` default.
+  - In `SettingsSheet`, the speed label displays `movementSpeedMultiplier / 0.2`, so the default `0.2` is cleanly displayed as **`1.0x`** with the slider adjustable from `0.5x` (`0.1`) to `2.0x` (`0.4`).
+- **Infinite World Generation for All World Types**:
+  - Removed all `halfWorld` boundaries and chunk generation clamps across Standard, Flat World, Sky Islands, Amplified Peaks, and Endless Desert so the procedural world generates infinitely in all directions.
+  - Removed horizontal coordinate clamping in `stepPhysics(dt:)`, allowing players to walk, run, and fly infinitely across the world.
+  - Enabled dynamic infinite chunk streaming in `updateStreamedChunks` and unrestricted block placement in `placeSelectedBlock()`.
+  - Removed boundary limits on water flow simulation.
+- **Render Distance Uncoupled from Vertical Y Axis**:
+  - Removed distance fog in SceneKit and expanded camera `zFar` to 800.0.
+  - Render distance now strictly governs horizontal chunk streaming (`dx`, `dz`), ensuring the full vertical height of towering mountains, sky islands, and void depth is always visible without vertical fog cut-offs or clipping.
+
+---
+
 ## [1.4.4] - 2026-10-18
 
 ### Added

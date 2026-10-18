@@ -1247,7 +1247,7 @@ struct MainMenuView: View {
 
                 // Footer
                 HStack(spacing: 12) {
-                    Text("500x500 Worlds")
+                    Text("Infinite Worlds")
                     Text("•")
                     Text("Full Block Water")
                     Text("•")
@@ -1661,11 +1661,11 @@ struct InGameSettingsSheet: View {
                             Text("Movement Speed")
                                 .font(.system(size: 12, weight: .bold, design: .monospaced))
                             Spacer()
-                            Text(String(format: "%.1fx", world.controlLayout.movementSpeedMultiplier))
+                            Text(String(format: "%.1fx", world.controlLayout.movementSpeedMultiplier / 0.2))
                                 .font(.system(size: 11, weight: .bold, design: .monospaced))
                                 .foregroundColor(.cyan)
                         }
-                        Slider(value: $world.controlLayout.movementSpeedMultiplier, in: 0.5...1.5, step: 0.1)
+                        Slider(value: $world.controlLayout.movementSpeedMultiplier, in: 0.1...0.4, step: 0.02)
                     }
 
                     VStack(alignment: .leading, spacing: 6) {
