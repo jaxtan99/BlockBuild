@@ -10,6 +10,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [1.3.0] - 2026-10-18
+
+### Added
+- **Configurable Render Distance Setting**: Added in-game slider under Settings -> Display & Performance allowing players to customize chunk render distance between 2 and 16 chunks (20m to 160m). Dynamically recalculates camera far clipping plane and atmospheric fog, and persists choice across sessions in `UserDefaults`.
+- **Authentic Minecraft PNG Skin Textures**: Generated clean 64x64 pixel-art skin PNG files for all 14 skins bundled into the asset catalog and `BlockBuild/Skins/`.
+- **SkinTextureManager**: High-performance texture manager that loads skin PNGs and maps UV faces with nearest-neighbor interpolation to clean standard Minecraft-proportioned body limbs.
+
+### Changed
+- **Non-Creepy Player Avatars**: Replaced protruding 3D box accessories with smooth, authentic Minecraft character models textured directly from standard PNG files.
+- **2D Pixel Art Skin Previews**: `CharacterAvatarPreview` in the Skins sheet now renders directly from the skin PNG file with nearest-neighbor pixel scaling.
+
+### Fixed
+- **Roof Corner / Between-Row Steps**: Fixed corner and between-row detection so the special half-top step (`roofCornerStepGeo`) triggers whenever a roof block is between roof blocks, including within a single row (along X or Z), at L-corners, and at sloped intersections.
+
+---
+
 ## [1.2.0] - 2026-10-18
 
 ### Added

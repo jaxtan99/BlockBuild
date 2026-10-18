@@ -464,6 +464,25 @@ enum PlayerSkin: String, CaseIterable, Codable, Identifiable {
 
     var id: String { rawValue }
 
+    var assetName: String {
+        switch self {
+        case .steve: return "steve"
+        case .alex: return "alex"
+        case .knight: return "knight"
+        case .robot: return "robot"
+        case .miner: return "miner"
+        case .astronaut: return "astronaut"
+        case .wizard: return "wizard"
+        case .zombie: return "zombie"
+        case .ninja: return "ninja"
+        case .pirate: return "pirate"
+        case .viking: return "viking"
+        case .cyborg: return "cyborg"
+        case .nether: return "nether"
+        case .arctic: return "arctic"
+        }
+    }
+
     var displayName: String {
         switch self {
         case .steve: return "Classic Steve"
@@ -819,9 +838,14 @@ final class VoxelWorld: NSObject, ObservableObject {
     let halfWorld: Int = 250
     let seaLevel: Int = 4
 
-    // Chunk streaming config (each chunk is 10x10 columns, view radius = 2 chunks around player)
-    private let chunkSize: Int = 10
-    private let activeChunkRadius: Int = 2
+    // Chunk streaming config (each chunk is 10x10 columns, configurable view radius 2...16)
+    let chunkSize: Int = 10
+    @Published var renderDistance: Int = 4 {
+        didSet {
+            UserDefaults.standard.set(renderDistance, forKey: "blockbuild_render_distance")
+            applyRenderDistance()
+        }
+    }
 
     // Current World Metadata & Saved Worlds
     @Published var currentWorldID: UUID = UUID()
@@ -970,6 +994,12 @@ final class VoxelWorld: NSObject, ObservableObject {
         if let savedSkin = UserDefaults.standard.string(forKey: "blockbuild_selected_skin"),
            let skin = PlayerSkin(rawValue: savedSkin) {
             self.selectedSkin = skin
+        }
+        let savedDistance = UserDefaults.standard.integer(forKey: "blockbuild_render_distance")
+        if savedDistance >= 2 && savedDistance <= 16 {
+            self.renderDistance = savedDistance
+        } else {
+            self.renderDistance = 4
         }
         loadControlLayout()
         setupGeometries()
@@ -1158,6 +1188,7 @@ final class VoxelWorld: NSObject, ObservableObject {
 
         scene.rootNode.addChildNode(blocksRootNode)
         scene.rootNode.addChildNode(playersRootNode)
+        applyRenderDistance()
 
         let highlightGeo = SCNBox(width: 1.015, height: 1.015, length: 1.015, chamferRadius: 0.0)
         let highlightMat = SCNMaterial()
@@ -1168,6 +1199,20 @@ final class VoxelWorld: NSObject, ObservableObject {
         selectionBoxNode = SCNNode(geometry: highlightGeo)
         selectionBoxNode.isHidden = true
         scene.rootNode.addChildNode(selectionBoxNode)
+    }
+
+    func setRenderDistance(_ distance: Int) {
+        let clamped = max(2, min(16, distance))
+        guard clamped != renderDistance else { return }
+        renderDistance = clamped
+    }
+
+    func applyRenderDistance() {
+        let viewDist = Float(renderDistance * chunkSize)
+        cameraNode.camera?.zFar = Double(max(120.0, viewDist * 1.8))
+        scene.fogStartDistance = CGFloat(viewDist * 0.70)
+        scene.fogEndDistance = CGFloat(viewDist * 1.15)
+        updateStreamedChunks(force: true)
     }
 
     func toggleMusic() {
@@ -1472,8 +1517,8 @@ final class VoxelWorld: NSObject, ObservableObject {
         lastPlayerChunk = playerChunk
 
         var desiredChunks: Set<ChunkCoord> = []
-        for dx in -activeChunkRadius...activeChunkRadius {
-            for dz in -activeChunkRadius...activeChunkRadius {
+        for dx in -renderDistance...renderDistance {
+            for dz in -renderDistance...renderDistance {
                 let c = ChunkCoord(cx: playerChunk.cx + dx, cz: playerChunk.cz + dz)
                 if c.cx * chunkSize < halfWorld && (c.cx + 1) * chunkSize > -halfWorld &&
                    c.cz * chunkSize < halfWorld && (c.cz + 1) * chunkSize > -halfWorld {
@@ -2259,7 +2304,7 @@ final class VoxelWorld: NSObject, ObservableObject {
     private func getRoofCornerOffset(at coord: BlockCoord) -> (stepX: Float, stepZ: Float)? {
         guard blocks[coord] == .roof else { return nil }
 
-        // Check horizontal neighbors on X axis (West/East) and Z axis (North/South, aka top-down Y axis)
+        // Check horizontal neighbors on X axis (West/East) and Z axis (North/South)
         let westRoof = (blocks[BlockCoord(x: coord.x - 1, y: coord.y, z: coord.z)] == .roof)
         let eastRoof = (blocks[BlockCoord(x: coord.x + 1, y: coord.y, z: coord.z)] == .roof)
         let northRoof = (blocks[BlockCoord(x: coord.x, y: coord.y, z: coord.z - 1)] == .roof)
@@ -2271,48 +2316,57 @@ final class VoxelWorld: NSObject, ObservableObject {
         let northRoofAdj = northRoof || (blocks[BlockCoord(x: coord.x, y: coord.y + 1, z: coord.z - 1)] == .roof) || (blocks[BlockCoord(x: coord.x, y: coord.y - 1, z: coord.z - 1)] == .roof)
         let southRoofAdj = southRoof || (blocks[BlockCoord(x: coord.x, y: coord.y + 1, z: coord.z + 1)] == .roof) || (blocks[BlockCoord(x: coord.x, y: coord.y - 1, z: coord.z + 1)] == .roof)
 
-        let dx: Int
-        if westRoofAdj && !eastRoofAdj {
-            dx = -1
-        } else if eastRoofAdj && !westRoofAdj {
-            dx = 1
-        } else {
-            dx = 0
-        }
-
-        let dz: Int
-        if northRoofAdj && !southRoofAdj {
-            dz = -1
-        } else if southRoofAdj && !northRoofAdj {
-            dz = 1
-        } else {
-            dz = 0
-        }
-
-        // Check 3D Y axis as well
         let upRoof = (blocks[BlockCoord(x: coord.x, y: coord.y + 1, z: coord.z)] == .roof)
         let downRoof = (blocks[BlockCoord(x: coord.x, y: coord.y - 1, z: coord.z)] == .roof)
-        let dy = (upRoof && !downRoof) ? 1 : ((downRoof && !upRoof) ? -1 : 0)
 
-        // Must be between one on X axis and one on Y/Z axis
-        guard dx != 0 && (dz != 0 || dy != 0) else {
+        // Condition 1: Between roof blocks in 1 row along X
+        let betweenXRow = westRoofAdj && eastRoofAdj
+        // Condition 2: Between roof blocks in 1 row along Z
+        let betweenZRow = northRoofAdj && southRoofAdj
+        // Condition 3: Between orthogonal roof blocks (Corner)
+        let isCorner = (westRoofAdj || eastRoofAdj) && (northRoofAdj || southRoofAdj)
+        // Condition 4: Between sloped/vertical roof blocks
+        let isSlopedBetween = (westRoofAdj || eastRoofAdj || northRoofAdj || southRoofAdj) && (upRoof || downRoof)
+
+        // Must be between roof blocks (even if in 1 row)
+        guard betweenXRow || betweenZRow || isCorner || isSlopedBetween else {
             return nil
         }
 
-        let effectiveDz = (dz != 0) ? dz : (dy > 0 ? 1 : -1)
         let dir = blockOrientations[coord] ?? 0
-
         let stepX: Float
         let stepZ: Float
 
-        if dir == 1 || dir == 3 {
-            // Player gaze was along X
-            stepX = (dir == 1) ? 0.25 : -0.25
-            stepZ = Float(effectiveDz) * 0.25
-        } else {
-            // Player gaze was along Z (dir == 0 or 2)
+        if betweenXRow && !isCorner {
+            // Between a 1-row along X: place half-top step based on direction
             stepZ = (dir == 2) ? 0.25 : -0.25
-            stepX = Float(dx) * 0.25
+            stepX = (dir == 1) ? 0.25 : (dir == 3 ? -0.25 : 0.25)
+        } else if betweenZRow && !isCorner {
+            // Between a 1-row along Z: place half-top step based on direction
+            stepX = (dir == 1) ? 0.25 : -0.25
+            stepZ = (dir == 2) ? 0.25 : (dir == 0 ? -0.25 : 0.25)
+        } else {
+            // Corner or sloped intersection
+            let xSign: Float
+            if eastRoofAdj && !westRoofAdj {
+                xSign = 1.0
+            } else if westRoofAdj && !eastRoofAdj {
+                xSign = -1.0
+            } else {
+                xSign = (dir == 1) ? 1.0 : -1.0
+            }
+
+            let zSign: Float
+            if southRoofAdj && !northRoofAdj {
+                zSign = 1.0
+            } else if northRoofAdj && !southRoofAdj {
+                zSign = -1.0
+            } else {
+                zSign = (dir == 2) ? 1.0 : -1.0
+            }
+
+            stepX = xSign * 0.25
+            stepZ = zSign * 0.25
         }
 
         return (stepX, stepZ)
@@ -3615,234 +3669,49 @@ final class VoxelWorld: NSObject, ObservableObject {
 
     private static func makeBlockyPlayerAvatarNode(name: String, skin: PlayerSkin) -> SCNNode {
         let root = SCNNode()
+        let mgr = SkinTextureManager.shared
 
-        // Helper to quickly make colored material
-        func makeMat(_ color: UIColor, emission: UIColor? = nil) -> SCNMaterial {
-            let m = SCNMaterial()
-            m.diffuse.contents = color
-            if let em = emission {
-                m.emission.contents = em
-            }
-            return m
-        }
+        // 1. Legs (Left & Right standard Minecraft limbs)
+        let leftLegGeo = SCNBox(width: 0.22, height: 0.65, length: 0.22, chamferRadius: 0.0)
+        leftLegGeo.materials = mgr.leftLegMaterials(for: skin)
+        let leftLegNode = SCNNode(geometry: leftLegGeo)
+        leftLegNode.position = SCNVector3(-0.13, 0.325, 0)
+        root.addChildNode(leftLegNode)
 
-        let pantsMat = makeMat(skin.legsColor)
-        let bootsMat = makeMat(skin.bootsColor)
-        let torsoMat = makeMat(skin.torsoColor)
-        let headMat = makeMat(skin.headColor)
-        let hairMat = makeMat(skin.hairColor)
-        let accentMat = makeMat(skin.accentColor, emission: skin.accentColor.withAlphaComponent(0.4))
-        let whiteMat = makeMat(.white, emission: UIColor(white: 0.9, alpha: 1.0))
-        let eyeMat = makeMat(skin.eyeColor, emission: skin.eyeColor.withAlphaComponent(0.6))
-        let blackMat = makeMat(.black)
+        let rightLegGeo = SCNBox(width: 0.22, height: 0.65, length: 0.22, chamferRadius: 0.0)
+        rightLegGeo.materials = mgr.rightLegMaterials(for: skin)
+        let rightLegNode = SCNNode(geometry: rightLegGeo)
+        rightLegNode.position = SCNVector3(0.13, 0.325, 0)
+        root.addChildNode(rightLegNode)
 
-        // 1. LEGS (Left & Right with Pants and Boots)
-        for xOffset in [-0.13, 0.13] as [Float] {
-            // Upper leg / pants
-            let legGeo = SCNBox(width: 0.22, height: 0.44, length: 0.26, chamferRadius: 0.0)
-            legGeo.materials = [pantsMat]
-            let legNode = SCNNode(geometry: legGeo)
-            legNode.position = SCNVector3(xOffset, 0.43, 0)
-            root.addChildNode(legNode)
-
-            // Boot / footwear cuff
-            let bootGeo = SCNBox(width: 0.24, height: 0.22, length: 0.28, chamferRadius: 0.0)
-            bootGeo.materials = [bootsMat]
-            let bootNode = SCNNode(geometry: bootGeo)
-            bootNode.position = SCNVector3(xOffset, 0.11, 0.01)
-            root.addChildNode(bootNode)
-        }
-
-        // 2. TORSO & WAISTBAND
-        let torsoGeo = SCNBox(width: 0.50, height: 0.62, length: 0.28, chamferRadius: 0.0)
-        torsoGeo.materials = [torsoMat]
+        // 2. Torso
+        let torsoGeo = SCNBox(width: 0.50, height: 0.65, length: 0.25, chamferRadius: 0.0)
+        torsoGeo.materials = mgr.torsoMaterials(for: skin)
         let torsoNode = SCNNode(geometry: torsoGeo)
-        torsoNode.position = SCNVector3(0, 0.96, 0)
+        torsoNode.position = SCNVector3(0, 0.975, 0)
         root.addChildNode(torsoNode)
 
-        // Belt / Waist Trim
-        let beltGeo = SCNBox(width: 0.52, height: 0.10, length: 0.30, chamferRadius: 0.0)
-        beltGeo.materials = [bootsMat]
-        let beltNode = SCNNode(geometry: beltGeo)
-        beltNode.position = SCNVector3(0, 0.68, 0)
-        root.addChildNode(beltNode)
+        // 3. Arms (Left & Right)
+        let leftArmGeo = SCNBox(width: 0.22, height: 0.65, length: 0.22, chamferRadius: 0.0)
+        leftArmGeo.materials = mgr.leftArmMaterials(for: skin)
+        let leftArmNode = SCNNode(geometry: leftArmGeo)
+        leftArmNode.position = SCNVector3(-0.36, 0.975, 0)
+        root.addChildNode(leftArmNode)
 
-        // Belt Buckle
-        let buckleGeo = SCNBox(width: 0.14, height: 0.08, length: 0.32, chamferRadius: 0.0)
-        buckleGeo.materials = [accentMat]
-        let buckleNode = SCNNode(geometry: buckleGeo)
-        buckleNode.position = SCNVector3(0, 0.68, 0.005)
-        root.addChildNode(buckleNode)
+        let rightArmGeo = SCNBox(width: 0.22, height: 0.65, length: 0.22, chamferRadius: 0.0)
+        rightArmGeo.materials = mgr.rightArmMaterials(for: skin)
+        let rightArmNode = SCNNode(geometry: rightArmGeo)
+        rightArmNode.position = SCNVector3(0.36, 0.975, 0)
+        root.addChildNode(rightArmNode)
 
-        // Torso Emblem / Chest Accent
-        let chestGeo = SCNBox(width: 0.24, height: 0.24, length: 0.30, chamferRadius: 0.0)
-        chestGeo.materials = [accentMat]
-        let chestNode = SCNNode(geometry: chestGeo)
-        chestNode.position = SCNVector3(0, 1.04, 0.005)
-        root.addChildNode(chestNode)
-
-        // Optional Backpack (Astronaut life support, Miner supply bag, Arctic pack)
-        if skin.hasBackpack {
-            let packGeo = SCNBox(width: 0.32, height: 0.38, length: 0.14, chamferRadius: 0.0)
-            packGeo.materials = [accentMat]
-            let packNode = SCNNode(geometry: packGeo)
-            packNode.position = SCNVector3(0, 0.98, -0.20)
-            root.addChildNode(packNode)
-        }
-
-        // 3. ARMS (Left & Right with Sleeves, Hands, and Shoulder Pauldrons)
-        for armX in [-0.36, 0.36] as [Float] {
-            // Upper sleeve
-            let sleeveGeo = SCNBox(width: 0.20, height: 0.34, length: 0.24, chamferRadius: 0.0)
-            sleeveGeo.materials = [torsoMat]
-            let sleeveNode = SCNNode(geometry: sleeveGeo)
-            sleeveNode.position = SCNVector3(armX, 1.10, 0)
-            root.addChildNode(sleeveNode)
-
-            // Hand / Forearm
-            let handGeo = SCNBox(width: 0.18, height: 0.28, length: 0.22, chamferRadius: 0.0)
-            handGeo.materials = [headMat]
-            let handNode = SCNNode(geometry: handGeo)
-            handNode.position = SCNVector3(armX, 0.79, 0)
-            root.addChildNode(handNode)
-
-            // Shoulder Cuff / Trim
-            let shoulderGeo = SCNBox(width: 0.22, height: 0.08, length: 0.26, chamferRadius: 0.0)
-            shoulderGeo.materials = [accentMat]
-            let shoulderNode = SCNNode(geometry: shoulderGeo)
-            shoulderNode.position = SCNVector3(armX, 1.23, 0)
-            root.addChildNode(shoulderNode)
-        }
-
-        // 4. HEAD & HAIR
-        let headGeo = SCNBox(width: 0.46, height: 0.46, length: 0.46, chamferRadius: 0.0)
-        headGeo.materials = [headMat]
+        // 4. Head
+        let headGeo = SCNBox(width: 0.50, height: 0.50, length: 0.50, chamferRadius: 0.0)
+        headGeo.materials = mgr.headMaterials(for: skin)
         let headNode = SCNNode(geometry: headGeo)
-        headNode.position = SCNVector3(0, 1.54, 0)
+        headNode.position = SCNVector3(0, 1.55, 0)
         root.addChildNode(headNode)
 
-        // Hair / Helmet Top
-        let hairTopGeo = SCNBox(width: 0.48, height: 0.16, length: 0.48, chamferRadius: 0.0)
-        hairTopGeo.materials = [hairMat]
-        let hairTopNode = SCNNode(geometry: hairTopGeo)
-        hairTopNode.position = SCNVector3(0, 1.69, 0)
-        root.addChildNode(hairTopNode)
-
-        // Hair Back & Sides
-        let hairBackGeo = SCNBox(width: 0.48, height: 0.30, length: 0.24, chamferRadius: 0.0)
-        hairBackGeo.materials = [hairMat]
-        let hairBackNode = SCNNode(geometry: hairBackGeo)
-        hairBackNode.position = SCNVector3(0, 1.54, -0.12)
-        root.addChildNode(hairBackNode)
-
-        // 5. FACIAL TEXTURE FEATURES (Eyes & Eyepatch)
-        // Left Eye (Sclera + Pupil)
-        let leftScleraGeo = SCNBox(width: 0.08, height: 0.06, length: 0.02, chamferRadius: 0.0)
-        leftScleraGeo.materials = [whiteMat]
-        let leftScleraNode = SCNNode(geometry: leftScleraGeo)
-        leftScleraNode.position = SCNVector3(-0.11, 1.54, 0.233)
-        root.addChildNode(leftScleraNode)
-
-        let leftPupilGeo = SCNBox(width: 0.04, height: 0.06, length: 0.025, chamferRadius: 0.0)
-        leftPupilGeo.materials = [eyeMat]
-        let leftPupilNode = SCNNode(geometry: leftPupilGeo)
-        leftPupilNode.position = SCNVector3(-0.11, 1.54, 0.235)
-        root.addChildNode(leftPupilNode)
-
-        // Right Eye (Or Eyepatch for Pirate)
-        if skin.hasEyepatch {
-            let patchGeo = SCNBox(width: 0.12, height: 0.10, length: 0.025, chamferRadius: 0.0)
-            patchGeo.materials = [blackMat]
-            let patchNode = SCNNode(geometry: patchGeo)
-            patchNode.position = SCNVector3(0.11, 1.54, 0.235)
-            root.addChildNode(patchNode)
-        } else {
-            let rightScleraGeo = SCNBox(width: 0.08, height: 0.06, length: 0.02, chamferRadius: 0.0)
-            rightScleraGeo.materials = [whiteMat]
-            let rightScleraNode = SCNNode(geometry: rightScleraGeo)
-            rightScleraNode.position = SCNVector3(0.11, 1.54, 0.233)
-            root.addChildNode(rightScleraNode)
-
-            let rightPupilGeo = SCNBox(width: 0.04, height: 0.06, length: 0.025, chamferRadius: 0.0)
-            rightPupilGeo.materials = [eyeMat]
-            let rightPupilNode = SCNNode(geometry: rightPupilGeo)
-            rightPupilNode.position = SCNVector3(0.11, 1.54, 0.235)
-            root.addChildNode(rightPupilNode)
-        }
-
-        // 6. DISTINCTIVE SKIN ACCESSORY FEATURES
-        switch skin.featureStyle {
-        case .minerLamp:
-            let lampGeo = SCNBox(width: 0.12, height: 0.12, length: 0.08, chamferRadius: 0.0)
-            lampGeo.materials = [accentMat]
-            let lampNode = SCNNode(geometry: lampGeo)
-            lampNode.position = SCNVector3(0, 1.70, 0.26)
-            root.addChildNode(lampNode)
-
-        case .spaceVisor:
-            let visorGeo = SCNBox(width: 0.42, height: 0.20, length: 0.08, chamferRadius: 0.0)
-            visorGeo.materials = [accentMat]
-            let visorNode = SCNNode(geometry: visorGeo)
-            visorNode.position = SCNVector3(0, 1.54, 0.22)
-            root.addChildNode(visorNode)
-
-        case .visor:
-            let slitGeo = SCNBox(width: 0.48, height: 0.08, length: 0.48, chamferRadius: 0.0)
-            slitGeo.materials = [accentMat]
-            let slitNode = SCNNode(geometry: slitGeo)
-            slitNode.position = SCNVector3(0, 1.58, 0.01)
-            root.addChildNode(slitNode)
-
-        case .ninjaMask:
-            let maskGeo = SCNBox(width: 0.44, height: 0.16, length: 0.08, chamferRadius: 0.0)
-            maskGeo.materials = [torsoMat]
-            let maskNode = SCNNode(geometry: maskGeo)
-            maskNode.position = SCNVector3(0, 1.44, 0.21)
-            root.addChildNode(maskNode)
-
-        case .horns:
-            for hornX in [-0.25, 0.25] as [Float] {
-                let hornGeo = SCNBox(width: 0.08, height: 0.18, length: 0.08, chamferRadius: 0.0)
-                hornGeo.materials = [accentMat]
-                let hornNode = SCNNode(geometry: hornGeo)
-                hornNode.position = SCNVector3(hornX, 1.76, 0)
-                hornNode.eulerAngles = SCNVector3(0, 0, hornX > 0 ? -0.3 : 0.3)
-                root.addChildNode(hornNode)
-            }
-
-        case .wizardPoint:
-            let pointGeo = SCNBox(width: 0.20, height: 0.24, length: 0.20, chamferRadius: 0.0)
-            pointGeo.materials = [hairMat]
-            let pointNode = SCNNode(geometry: pointGeo)
-            pointNode.position = SCNVector3(0, 1.86, 0)
-            root.addChildNode(pointNode)
-
-            let tipGeo = SCNBox(width: 0.10, height: 0.16, length: 0.10, chamferRadius: 0.0)
-            tipGeo.materials = [accentMat]
-            let tipNode = SCNNode(geometry: tipGeo)
-            tipNode.position = SCNVector3(0, 2.02, -0.03)
-            root.addChildNode(tipNode)
-
-        case .cybernetic:
-            let cyberGeo = SCNBox(width: 0.10, height: 0.18, length: 0.10, chamferRadius: 0.0)
-            cyberGeo.materials = [accentMat]
-            let cyberNode = SCNNode(geometry: cyberGeo)
-            cyberNode.position = SCNVector3(0.24, 1.62, 0.10)
-            root.addChildNode(cyberNode)
-
-        case .furHood:
-            let hoodGeo = SCNBox(width: 0.50, height: 0.48, length: 0.08, chamferRadius: 0.0)
-            hoodGeo.materials = [hairMat]
-            let hoodNode = SCNNode(geometry: hoodGeo)
-            hoodNode.position = SCNVector3(0, 1.54, 0.21)
-            root.addChildNode(hoodNode)
-
-        case .classic:
-            break
-        }
-
-        // 7. 3D BILLBOARD FLOATING NAME TAG (User Name Directly On Top Of Player Head)
-        // User requested: ONLY show username (no skin text) and place right on top of player.
+        // 5. 3D Billboard Floating Name Tag (User Name Directly On Top Of Player Head)
         let tagText = name
         let textGeo = SCNText(string: tagText, extrusionDepth: 0.10)
         textGeo.font = UIFont.monospacedSystemFont(ofSize: 2.2, weight: .black)
@@ -3857,16 +3726,8 @@ final class VoxelWorld: NSObject, ObservableObject {
         let scaleFactor: Float = 0.065
         let textCenterX = (minVec.x + maxVec.x) * 0.5 * scaleFactor
 
-        // Place right directly above player head / hat
-        let nametagY: Float
-        switch skin.featureStyle {
-        case .wizardPoint:
-            nametagY = 2.15
-        case .horns:
-            nametagY = 1.94
-        default:
-            nametagY = 1.86
-        }
+        // Place right directly above player head (head top is y = 1.80)
+        let nametagY: Float = 1.88
 
         textNode.scale = SCNVector3(scaleFactor, scaleFactor, scaleFactor)
         textNode.position = SCNVector3(-textCenterX, nametagY, 0)
@@ -3876,6 +3737,191 @@ final class VoxelWorld: NSObject, ObservableObject {
         root.addChildNode(textNode)
 
         return root
+    }
+}
+
+// MARK: - Minecraft PNG Skin Texture Manager
+
+final class SkinTextureManager: @unchecked Sendable {
+    static let shared = SkinTextureManager()
+
+    private var headMaterialsCache: [PlayerSkin: [SCNMaterial]] = [:]
+    private var torsoMaterialsCache: [PlayerSkin: [SCNMaterial]] = [:]
+    private var rightArmMaterialsCache: [PlayerSkin: [SCNMaterial]] = [:]
+    private var leftArmMaterialsCache: [PlayerSkin: [SCNMaterial]] = [:]
+    private var rightLegMaterialsCache: [PlayerSkin: [SCNMaterial]] = [:]
+    private var leftLegMaterialsCache: [PlayerSkin: [SCNMaterial]] = [:]
+    private var skinImageCache: [PlayerSkin: UIImage] = [:]
+    private var frontAvatarCache: [PlayerSkin: UIImage] = [:]
+
+    func skinImage(for skin: PlayerSkin) -> UIImage {
+        if let cached = skinImageCache[skin] {
+            return cached
+        }
+        let imageName = "skin_\(skin.assetName)"
+        // 1. Try Assets.xcassets catalog
+        if let img = UIImage(named: imageName) {
+            skinImageCache[skin] = img
+            return img
+        }
+        // 2. Try application bundle and project skins directory
+        let searchPaths = [
+            Bundle.main.path(forResource: imageName, ofType: "png"),
+            Bundle.main.bundlePath + "/Skins/\(imageName).png",
+            "/Users/jaxtan/projects/BlockBuild/BlockBuild/Skins/\(imageName).png"
+        ]
+        for path in searchPaths.compactMap({ $0 }) {
+            if let img = UIImage(contentsOfFile: path) {
+                skinImageCache[skin] = img
+                return img
+            }
+        }
+        // 3. Fallback: generate solid color image
+        let fallback = generateSolidFallbackSkin(skin)
+        skinImageCache[skin] = fallback
+        return fallback
+    }
+
+    private func cropFace(from cg: CGImage, x: Int, y: Int, w: Int, h: Int) -> UIImage {
+        let rect = CGRect(x: x, y: y, width: w, height: h)
+        if let cropped = cg.cropping(to: rect) {
+            return UIImage(cgImage: cropped)
+        }
+        return UIImage()
+    }
+
+    private func makePixelMat(from image: UIImage) -> SCNMaterial {
+        let mat = SCNMaterial()
+        mat.diffuse.contents = image
+        mat.diffuse.magnificationFilter = .nearest
+        mat.diffuse.minificationFilter = .nearest
+        mat.diffuse.mipFilter = .none
+        mat.isDoubleSided = false
+        mat.lightingModel = .lambert
+        return mat
+    }
+
+    func headMaterials(for skin: PlayerSkin) -> [SCNMaterial] {
+        if let cached = headMaterialsCache[skin] { return cached }
+        let img = skinImage(for: skin)
+        guard let cg = img.cgImage else { return [] }
+        // SCNBox materials: 0:Front, 1:Right, 2:Back, 3:Left, 4:Top, 5:Bottom
+        let front = makePixelMat(from: cropFace(from: cg, x: 8, y: 8, w: 8, h: 8))
+        let right = makePixelMat(from: cropFace(from: cg, x: 0, y: 8, w: 8, h: 8))
+        let back = makePixelMat(from: cropFace(from: cg, x: 24, y: 8, w: 8, h: 8))
+        let left = makePixelMat(from: cropFace(from: cg, x: 16, y: 8, w: 8, h: 8))
+        let top = makePixelMat(from: cropFace(from: cg, x: 8, y: 0, w: 8, h: 8))
+        let bottom = makePixelMat(from: cropFace(from: cg, x: 16, y: 0, w: 8, h: 8))
+        let mats = [front, right, back, left, top, bottom]
+        headMaterialsCache[skin] = mats
+        return mats
+    }
+
+    func torsoMaterials(for skin: PlayerSkin) -> [SCNMaterial] {
+        if let cached = torsoMaterialsCache[skin] { return cached }
+        let img = skinImage(for: skin)
+        guard let cg = img.cgImage else { return [] }
+        let front = makePixelMat(from: cropFace(from: cg, x: 20, y: 20, w: 8, h: 12))
+        let right = makePixelMat(from: cropFace(from: cg, x: 16, y: 20, w: 4, h: 12))
+        let back = makePixelMat(from: cropFace(from: cg, x: 32, y: 20, w: 8, h: 12))
+        let left = makePixelMat(from: cropFace(from: cg, x: 28, y: 20, w: 4, h: 12))
+        let top = makePixelMat(from: cropFace(from: cg, x: 20, y: 16, w: 8, h: 4))
+        let bottom = makePixelMat(from: cropFace(from: cg, x: 28, y: 16, w: 8, h: 4))
+        let mats = [front, right, back, left, top, bottom]
+        torsoMaterialsCache[skin] = mats
+        return mats
+    }
+
+    func rightArmMaterials(for skin: PlayerSkin) -> [SCNMaterial] {
+        if let cached = rightArmMaterialsCache[skin] { return cached }
+        let img = skinImage(for: skin)
+        guard let cg = img.cgImage else { return [] }
+        let front = makePixelMat(from: cropFace(from: cg, x: 44, y: 20, w: 4, h: 12))
+        let right = makePixelMat(from: cropFace(from: cg, x: 40, y: 20, w: 4, h: 12))
+        let back = makePixelMat(from: cropFace(from: cg, x: 52, y: 20, w: 4, h: 12))
+        let left = makePixelMat(from: cropFace(from: cg, x: 48, y: 20, w: 4, h: 12))
+        let top = makePixelMat(from: cropFace(from: cg, x: 44, y: 16, w: 4, h: 4))
+        let bottom = makePixelMat(from: cropFace(from: cg, x: 48, y: 16, w: 4, h: 4))
+        let mats = [front, right, back, left, top, bottom]
+        rightArmMaterialsCache[skin] = mats
+        return mats
+    }
+
+    func leftArmMaterials(for skin: PlayerSkin) -> [SCNMaterial] {
+        if let cached = leftArmMaterialsCache[skin] { return cached }
+        let img = skinImage(for: skin)
+        guard let cg = img.cgImage else { return [] }
+        let front = makePixelMat(from: cropFace(from: cg, x: 36, y: 52, w: 4, h: 12))
+        let right = makePixelMat(from: cropFace(from: cg, x: 32, y: 52, w: 4, h: 12))
+        let back = makePixelMat(from: cropFace(from: cg, x: 44, y: 52, w: 4, h: 12))
+        let left = makePixelMat(from: cropFace(from: cg, x: 40, y: 52, w: 4, h: 12))
+        let top = makePixelMat(from: cropFace(from: cg, x: 36, y: 48, w: 4, h: 4))
+        let bottom = makePixelMat(from: cropFace(from: cg, x: 40, y: 48, w: 4, h: 4))
+        let mats = [front, right, back, left, top, bottom]
+        leftArmMaterialsCache[skin] = mats
+        return mats
+    }
+
+    func rightLegMaterials(for skin: PlayerSkin) -> [SCNMaterial] {
+        if let cached = rightLegMaterialsCache[skin] { return cached }
+        let img = skinImage(for: skin)
+        guard let cg = img.cgImage else { return [] }
+        let front = makePixelMat(from: cropFace(from: cg, x: 4, y: 20, w: 4, h: 12))
+        let right = makePixelMat(from: cropFace(from: cg, x: 0, y: 20, w: 4, h: 12))
+        let back = makePixelMat(from: cropFace(from: cg, x: 12, y: 20, w: 4, h: 12))
+        let left = makePixelMat(from: cropFace(from: cg, x: 8, y: 20, w: 4, h: 12))
+        let top = makePixelMat(from: cropFace(from: cg, x: 4, y: 16, w: 4, h: 4))
+        let bottom = makePixelMat(from: cropFace(from: cg, x: 8, y: 16, w: 4, h: 4))
+        let mats = [front, right, back, left, top, bottom]
+        rightLegMaterialsCache[skin] = mats
+        return mats
+    }
+
+    func leftLegMaterials(for skin: PlayerSkin) -> [SCNMaterial] {
+        if let cached = leftLegMaterialsCache[skin] { return cached }
+        let img = skinImage(for: skin)
+        guard let cg = img.cgImage else { return [] }
+        let front = makePixelMat(from: cropFace(from: cg, x: 20, y: 52, w: 4, h: 12))
+        let right = makePixelMat(from: cropFace(from: cg, x: 16, y: 52, w: 4, h: 12))
+        let back = makePixelMat(from: cropFace(from: cg, x: 28, y: 52, w: 4, h: 12))
+        let left = makePixelMat(from: cropFace(from: cg, x: 24, y: 52, w: 4, h: 12))
+        let top = makePixelMat(from: cropFace(from: cg, x: 20, y: 48, w: 4, h: 4))
+        let bottom = makePixelMat(from: cropFace(from: cg, x: 24, y: 48, w: 4, h: 4))
+        let mats = [front, right, back, left, top, bottom]
+        leftLegMaterialsCache[skin] = mats
+        return mats
+    }
+
+    func frontAvatarImage(for skin: PlayerSkin) -> UIImage {
+        if let cached = frontAvatarCache[skin] { return cached }
+        let img = skinImage(for: skin)
+        guard let cg = img.cgImage else { return img }
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0
+        format.opaque = false
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 16, height: 32), format: format)
+        let result = renderer.image { _ in
+            cropFace(from: cg, x: 8, y: 8, w: 8, h: 8).draw(in: CGRect(x: 4, y: 0, width: 8, height: 8))
+            cropFace(from: cg, x: 44, y: 20, w: 4, h: 12).draw(in: CGRect(x: 0, y: 8, width: 4, height: 12))
+            cropFace(from: cg, x: 20, y: 20, w: 8, h: 12).draw(in: CGRect(x: 4, y: 8, width: 8, height: 12))
+            cropFace(from: cg, x: 36, y: 52, w: 4, h: 12).draw(in: CGRect(x: 12, y: 8, width: 4, height: 12))
+            cropFace(from: cg, x: 4, y: 20, w: 4, h: 12).draw(in: CGRect(x: 4, y: 20, width: 4, height: 12))
+            cropFace(from: cg, x: 20, y: 52, w: 4, h: 12).draw(in: CGRect(x: 8, y: 20, width: 4, height: 12))
+        }
+        frontAvatarCache[skin] = result
+        return result
+    }
+
+    private func generateSolidFallbackSkin(_ skin: PlayerSkin) -> UIImage {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0
+        format.opaque = true
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 64, height: 64), format: format)
+        return renderer.image { ctx in
+            skin.headColor.setFill()
+            ctx.fill(CGRect(x: 0, y: 0, width: 64, height: 64))
+        }
     }
 }
 

@@ -1261,160 +1261,13 @@ struct CharacterAvatarPreview: View {
     var size: CGFloat = 36
 
     var body: some View {
-        VStack(spacing: 1.5) {
-            // Head + Hair + Eyes + Accessories
-            ZStack(alignment: .top) {
-                // Face base
-                Rectangle()
-                    .fill(Color(skin.headColor))
-                    .frame(width: size * 0.52, height: size * 0.44)
-                    .cornerRadius(2)
-
-                // Hair / Helmet Top
-                Rectangle()
-                    .fill(Color(skin.hairColor))
-                    .frame(width: size * 0.54, height: size * 0.16)
-                    .cornerRadius(2)
-
-                // Face Eyes / Visor / Eyepatch
-                HStack(spacing: size * 0.12) {
-                    // Left Eye
-                    ZStack {
-                        Rectangle()
-                            .fill(Color.white)
-                            .frame(width: size * 0.11, height: size * 0.08)
-                        Rectangle()
-                            .fill(Color(skin.eyeColor))
-                            .frame(width: size * 0.06, height: size * 0.08)
-                    }
-
-                    // Right Eye or Eyepatch
-                    if skin.hasEyepatch {
-                        Rectangle()
-                            .fill(Color.black)
-                            .frame(width: size * 0.13, height: size * 0.10)
-                            .cornerRadius(1)
-                    } else {
-                        ZStack {
-                            Rectangle()
-                                .fill(Color.white)
-                                .frame(width: size * 0.11, height: size * 0.08)
-                            Rectangle()
-                                .fill(Color(skin.eyeColor))
-                                .frame(width: size * 0.06, height: size * 0.08)
-                        }
-                    }
-                }
-                .padding(.top, size * 0.18)
-
-                // Head Accessory Overlay (Visor / Mask / Horns / Lamp)
-                if skin.featureStyle == .spaceVisor || skin.featureStyle == .visor {
-                    Rectangle()
-                        .fill(Color(skin.accentColor).opacity(0.85))
-                        .frame(width: size * 0.46, height: size * 0.12)
-                        .padding(.top, size * 0.16)
-                } else if skin.featureStyle == .ninjaMask {
-                    Rectangle()
-                        .fill(Color(skin.torsoColor))
-                        .frame(width: size * 0.48, height: size * 0.14)
-                        .padding(.top, size * 0.28)
-                } else if skin.featureStyle == .minerLamp {
-                    Circle()
-                        .fill(Color(skin.accentColor))
-                        .frame(width: size * 0.14, height: size * 0.14)
-                        .padding(.top, size * 0.02)
-                } else if skin.featureStyle == .horns {
-                    HStack {
-                        Rectangle()
-                            .fill(Color(skin.accentColor))
-                            .frame(width: size * 0.08, height: size * 0.16)
-                            .rotationEffect(.degrees(-20))
-                        Spacer()
-                        Rectangle()
-                            .fill(Color(skin.accentColor))
-                            .frame(width: size * 0.08, height: size * 0.16)
-                            .rotationEffect(.degrees(20))
-                    }
-                    .frame(width: size * 0.62)
-                    .offset(y: -size * 0.06)
-                }
-            }
-
-            // Torso + Arms
-            HStack(spacing: 1.5) {
-                // Left Arm (Sleeve + Hand)
-                VStack(spacing: 0) {
-                    Rectangle()
-                        .fill(Color(skin.torsoColor))
-                        .frame(width: size * 0.16, height: size * 0.28)
-                    Rectangle()
-                        .fill(Color(skin.headColor))
-                        .frame(width: size * 0.15, height: size * 0.16)
-                }
-                .cornerRadius(1)
-
-                // Torso with Chest Emblem & Belt
-                ZStack(alignment: .bottom) {
-                    Rectangle()
-                        .fill(Color(skin.torsoColor))
-                        .frame(width: size * 0.44, height: size * 0.44)
-                        .cornerRadius(2)
-
-                    // Chest accent
-                    Rectangle()
-                        .fill(Color(skin.accentColor))
-                        .frame(width: size * 0.20, height: size * 0.16)
-                        .cornerRadius(1)
-                        .padding(.bottom, size * 0.18)
-
-                    // Belt & buckle
-                    ZStack {
-                        Rectangle()
-                            .fill(Color(skin.bootsColor))
-                            .frame(width: size * 0.44, height: size * 0.10)
-                        Rectangle()
-                            .fill(Color(skin.accentColor))
-                            .frame(width: size * 0.12, height: size * 0.08)
-                    }
-                }
-
-                // Right Arm (Sleeve + Hand)
-                VStack(spacing: 0) {
-                    Rectangle()
-                        .fill(Color(skin.torsoColor))
-                        .frame(width: size * 0.16, height: size * 0.28)
-                    Rectangle()
-                        .fill(Color(skin.headColor))
-                        .frame(width: size * 0.15, height: size * 0.16)
-                }
-                .cornerRadius(1)
-            }
-
-            // Legs (Pants + Boots)
-            HStack(spacing: 2) {
-                // Left Leg
-                VStack(spacing: 0) {
-                    Rectangle()
-                        .fill(Color(skin.legsColor))
-                        .frame(width: size * 0.22, height: size * 0.26)
-                    Rectangle()
-                        .fill(Color(skin.bootsColor))
-                        .frame(width: size * 0.23, height: size * 0.16)
-                }
-                .cornerRadius(1)
-
-                // Right Leg
-                VStack(spacing: 0) {
-                    Rectangle()
-                        .fill(Color(skin.legsColor))
-                        .frame(width: size * 0.22, height: size * 0.26)
-                    Rectangle()
-                        .fill(Color(skin.bootsColor))
-                        .frame(width: size * 0.23, height: size * 0.16)
-                }
-                .cornerRadius(1)
-            }
-        }
+        let avatarImage = SkinTextureManager.shared.frontAvatarImage(for: skin)
+        Image(uiImage: avatarImage)
+            .interpolation(.none)
+            .resizable()
+            .scaledToFit()
+            .frame(width: size * 0.65, height: size * 1.30)
+            .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
     }
 }
 
@@ -1639,6 +1492,36 @@ struct InGameSettingsSheet: View {
                             }
                             Text("Locks frame pacing to 60 FPS, smooths physics, and eliminates micro-stutters (Enabled by default)")
                                 .font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Image(systemName: "mountain.2.fill")
+                                .foregroundColor(.green)
+                            Text("Render Distance")
+                                .font(.system(size: 13, weight: .bold, design: .monospaced))
+                            Spacer()
+                            Text("\(world.renderDistance) Chunks (\(world.renderDistance * world.chunkSize)m)")
+                                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                .foregroundColor(.cyan)
+                        }
+                        Slider(
+                            value: Binding(
+                                get: { Double(world.renderDistance) },
+                                set: { world.setRenderDistance(Int($0)) }
+                            ),
+                            in: 2...16,
+                            step: 1
+                        )
+                        HStack {
+                            Text("2 Chunks (Fast)")
+                                .font(.system(size: 9, design: .monospaced))
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text("16 Chunks (Far)")
+                                .font(.system(size: 9, design: .monospaced))
                                 .foregroundColor(.secondary)
                         }
                     }
