@@ -10,6 +10,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [1.4.3] - 2026-10-18
+
+### Added
+- **Customizable Door Open/Close Button**: The contextual OPEN/CLOSE Door button is now an independently movable HUD control in the UI Control Settings customizer ("DRAG DOOR BTN"), letting players position it anywhere on screen.
+- **Higher Default Door Button Position**: Anchored the door button higher (`y: -90`) by default above the UP/DOWN and BREAK/PLACE buttons so it never interferes with movement, jump, or block interaction controls.
+- **Zero-Sticking Joystick Touch Overlay**: Replaced the gameplay `DragGesture` with a high-performance UIKit touch handler (`JoystickTouchOverlay`) implementing `touchesBegan`, `touchesMoved`, `touchesEnded`, and `touchesCancelled`, ensuring touches are always cleanly released even when interrupted by OS gestures or multi-touch transitions.
+
+### Fixed
+- **FPS Hiccups Down to 10 FPS**:
+  - Offloaded all chunk block-packing, delta serialization, and world encoding in `saveCurrentWorld()` to a background utility queue (`DispatchQueue.global(qos: .utility)`), completely eliminating 50–100ms main thread stalls during autosaves, block placement, and block breaking.
+  - Optimized water seam face updates in `updateStreamedChunks` to only refresh blocks adjacent to newly loaded chunks instead of scanning all active water nodes.
+  - Upgraded real-time FPS calculation in `stepPhysics(dt:)` to accumulate true frame delta times and apply exponential moving average smoothing, preventing momentary single-frame hitches from dragging the display counter to 10 FPS.
+- **Input State Resets on Sheets & Background**: Automatically resets movement velocity and joystick deflection when opening in-game settings, skins, worlds, or multiplayer sheets, or when the app enters the background.
+
+---
+
 ## [1.4.2] - 2026-10-18
 
 ### Added

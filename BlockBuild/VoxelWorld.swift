@@ -420,6 +420,8 @@ struct ControlLayoutConfig: Codable, Equatable {
     var actionOffsetY: CGFloat = 0
     var verticalOffsetX: CGFloat = 0
     var verticalOffsetY: CGFloat = 0
+    var doorButtonOffsetX: CGFloat = 0
+    var doorButtonOffsetY: CGFloat = -90 // higher by default so it never interferes with controls
 
     var joystickScale: CGFloat = 1.0
     var actionScale: CGFloat = 1.0
@@ -430,6 +432,76 @@ struct ControlLayoutConfig: Codable, Equatable {
     var swapLeftRight: Bool = false
 
     static let `default` = ControlLayoutConfig()
+
+    enum CodingKeys: String, CodingKey {
+        case joystickOffsetX, joystickOffsetY
+        case hotbarOffsetX, hotbarOffsetY
+        case actionOffsetX, actionOffsetY
+        case verticalOffsetX, verticalOffsetY
+        case doorButtonOffsetX, doorButtonOffsetY
+        case joystickScale, actionScale, hotbarScale
+        case controlOpacity, lookSensitivity, movementSpeedMultiplier, swapLeftRight
+    }
+
+    init(
+        joystickOffsetX: CGFloat = 0,
+        joystickOffsetY: CGFloat = 0,
+        hotbarOffsetX: CGFloat = 0,
+        hotbarOffsetY: CGFloat = 0,
+        actionOffsetX: CGFloat = 0,
+        actionOffsetY: CGFloat = 0,
+        verticalOffsetX: CGFloat = 0,
+        verticalOffsetY: CGFloat = 0,
+        doorButtonOffsetX: CGFloat = 0,
+        doorButtonOffsetY: CGFloat = -90,
+        joystickScale: CGFloat = 1.0,
+        actionScale: CGFloat = 1.0,
+        hotbarScale: CGFloat = 1.0,
+        controlOpacity: Double = 0.92,
+        lookSensitivity: Float = 1.0,
+        movementSpeedMultiplier: Float = 1.0,
+        swapLeftRight: Bool = false
+    ) {
+        self.joystickOffsetX = joystickOffsetX
+        self.joystickOffsetY = joystickOffsetY
+        self.hotbarOffsetX = hotbarOffsetX
+        self.hotbarOffsetY = hotbarOffsetY
+        self.actionOffsetX = actionOffsetX
+        self.actionOffsetY = actionOffsetY
+        self.verticalOffsetX = verticalOffsetX
+        self.verticalOffsetY = verticalOffsetY
+        self.doorButtonOffsetX = doorButtonOffsetX
+        self.doorButtonOffsetY = doorButtonOffsetY
+        self.joystickScale = joystickScale
+        self.actionScale = actionScale
+        self.hotbarScale = hotbarScale
+        self.controlOpacity = controlOpacity
+        self.lookSensitivity = lookSensitivity
+        self.movementSpeedMultiplier = movementSpeedMultiplier
+        self.swapLeftRight = swapLeftRight
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        joystickOffsetX = try container.decodeIfPresent(CGFloat.self, forKey: .joystickOffsetX) ?? 0
+        joystickOffsetY = try container.decodeIfPresent(CGFloat.self, forKey: .joystickOffsetY) ?? 0
+        hotbarOffsetX = try container.decodeIfPresent(CGFloat.self, forKey: .hotbarOffsetX) ?? 0
+        hotbarOffsetY = try container.decodeIfPresent(CGFloat.self, forKey: .hotbarOffsetY) ?? 0
+        actionOffsetX = try container.decodeIfPresent(CGFloat.self, forKey: .actionOffsetX) ?? 0
+        actionOffsetY = try container.decodeIfPresent(CGFloat.self, forKey: .actionOffsetY) ?? 0
+        verticalOffsetX = try container.decodeIfPresent(CGFloat.self, forKey: .verticalOffsetX) ?? 0
+        verticalOffsetY = try container.decodeIfPresent(CGFloat.self, forKey: .verticalOffsetY) ?? 0
+        doorButtonOffsetX = try container.decodeIfPresent(CGFloat.self, forKey: .doorButtonOffsetX) ?? 0
+        doorButtonOffsetY = try container.decodeIfPresent(CGFloat.self, forKey: .doorButtonOffsetY) ?? -90
+
+        joystickScale = try container.decodeIfPresent(CGFloat.self, forKey: .joystickScale) ?? 1.0
+        actionScale = try container.decodeIfPresent(CGFloat.self, forKey: .actionScale) ?? 1.0
+        hotbarScale = try container.decodeIfPresent(CGFloat.self, forKey: .hotbarScale) ?? 1.0
+        controlOpacity = try container.decodeIfPresent(Double.self, forKey: .controlOpacity) ?? 0.92
+        lookSensitivity = try container.decodeIfPresent(Float.self, forKey: .lookSensitivity) ?? 1.0
+        movementSpeedMultiplier = try container.decodeIfPresent(Float.self, forKey: .movementSpeedMultiplier) ?? 1.0
+        swapLeftRight = try container.decodeIfPresent(Bool.self, forKey: .swapLeftRight) ?? false
+    }
 }
 
 // MARK: - Player Character Skins (Multiplayer & Avatar Customization)
@@ -1075,10 +1147,16 @@ final class VoxelWorld: NSObject, ObservableObject {
         setupAppLifecycleAutoSave()
     }
 
+    func resetInputState() {
+        moveInput = .zero
+        verticalInput = 0.0
+    }
+
     private func setupAppLifecycleAutoSave() {
         let center = NotificationCenter.default
         let saveHandler: (Notification) -> Void = { [weak self] _ in
             Task { @MainActor in
+                self?.resetInputState()
                 self?.saveCurrentWorld(silent: true)
             }
         }
@@ -1620,14 +1698,22 @@ final class VoxelWorld: NSObject, ObservableObject {
             }
         }
 
-        // Refresh existing active water nodes when new chunks stream in
+        // Refresh active water nodes bordering newly loaded chunks
         if !chunksToLoad.isEmpty {
-            for (coord, node) in blockNodes where blocks[coord] == .water {
-                if isBlockExposed(coord) {
-                    configureNode(node, for: coord, type: .water)
-                } else {
-                    node.removeFromParentNode()
-                    blockNodes.removeValue(forKey: coord)
+            for c in chunksToLoad {
+                let minX = c.cx * chunkSize - 1
+                let maxX = (c.cx + 1) * chunkSize
+                let minZ = c.cz * chunkSize - 1
+                let maxZ = (c.cz + 1) * chunkSize
+                for (coord, node) in blockNodes where blocks[coord] == .water {
+                    if coord.x >= minX && coord.x <= maxX && coord.z >= minZ && coord.z <= maxZ {
+                        if isBlockExposed(coord) {
+                            configureNode(node, for: coord, type: .water)
+                        } else {
+                            node.removeFromParentNode()
+                            blockNodes.removeValue(forKey: coord)
+                        }
+                    }
                 }
             }
         }
@@ -2045,70 +2131,89 @@ final class VoxelWorld: NSObject, ObservableObject {
             currentWorldName = Self.cleanWorldName(currentWorldName, seed: worldSeed)
         }
 
-        // Serialize all blocks across every generated chunk so the whole world is saved across app updates!
-        var serializedChunks: [SavedChunkData] = []
-        serializedChunks.reserveCapacity(chunkBlocks.count)
-        for (chunk, localBlocks) in chunkBlocks {
-            var packed: [Int] = []
-            packed.reserveCapacity(localBlocks.count * 4)
-            for (coord, type) in localBlocks {
-                let wLvl = (type == .water) ? (waterSpreadLevels[coord] ?? 4) : 0
-                let openBit = openToggleBlocks.contains(coord) ? 1 : 0
-                let dir = (blockOrientations[coord] ?? 0) & 0x3
-                let encodedState = (type.rawValue & 0xFF) | ((wLvl & 0xF) << 8) | (openBit << 12) | (dir << 14)
-                packed.append(coord.x)
-                packed.append(coord.y)
-                packed.append(coord.z)
-                packed.append(encodedState)
-            }
-            serializedChunks.append(SavedChunkData(cx: chunk.cx, cz: chunk.cz, packedBlocks: packed))
-        }
+        let worldID = currentWorldID
+        let worldName = currentWorldName
+        let seed = worldSeed
+        let archetypeTitle = currentArchetype.title
+        let pPos = playerPosition
+        let pYaw = yaw
+        let pPitch = pitch
+        let invSnapshot = inventory
+        let chunkBlocksSnapshot = chunkBlocks
+        let modifiedBlocksSnapshot = modifiedBlocks
+        let waterSpreadLevelsSnapshot = waterSpreadLevels
+        let openToggleBlocksSnapshot = openToggleBlocks
+        let blockOrientationsSnapshot = blockOrientations
 
-        let serializedDeltas = modifiedBlocks.map { (coord, rawVal) in
-            SavedBlockDelta(
-                x: coord.x,
-                y: coord.y,
-                z: coord.z,
-                typeRaw: rawVal,
-                waterLevel: (rawVal == BlockType.water.rawValue) ? (waterSpreadLevels[coord] ?? 4) : nil,
-                isOpen: openToggleBlocks.contains(coord) ? true : nil,
-                direction: blockOrientations[coord]
-            )
-        }
-
-        var serializedInventory: [Int: Int] = [:]
-        for (type, count) in inventory {
-            serializedInventory[type.rawValue] = count
-        }
-
-        let snapshot = SavedWorld(
-            id: currentWorldID,
-            name: currentWorldName,
-            seed: worldSeed,
-            archetypeName: currentArchetype.title,
-            savedAt: Date(),
-            savedChunks: serializedChunks,
-            deltas: serializedDeltas,
-            blocks: nil,
-            inventory: serializedInventory,
-            playerX: playerPosition.x,
-            playerY: playerPosition.y,
-            playerZ: playerPosition.z,
-            yaw: yaw,
-            pitch: pitch
-        )
-
-        if let idx = savedWorlds.firstIndex(where: { $0.id == currentWorldID }) {
-            savedWorlds[idx] = snapshot
-        } else {
-            savedWorlds.insert(snapshot, at: 0)
-        }
-
-        savedWorlds.sort { $0.savedAt > $1.savedAt }
-        persistSavedWorlds()
         hasUnsavedChanges = false
-        if !silent {
-            statusToast = "Saved '\(currentWorldName)'!"
+
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self = self else { return }
+
+            var serializedChunks: [SavedChunkData] = []
+            serializedChunks.reserveCapacity(chunkBlocksSnapshot.count)
+            for (chunk, localBlocks) in chunkBlocksSnapshot {
+                var packed: [Int] = []
+                packed.reserveCapacity(localBlocks.count * 4)
+                for (coord, type) in localBlocks {
+                    let wLvl = (type == .water) ? (waterSpreadLevelsSnapshot[coord] ?? 4) : 0
+                    let openBit = openToggleBlocksSnapshot.contains(coord) ? 1 : 0
+                    let dir = (blockOrientationsSnapshot[coord] ?? 0) & 0x3
+                    let encodedState = (type.rawValue & 0xFF) | ((wLvl & 0xF) << 8) | (openBit << 12) | (dir << 14)
+                    packed.append(coord.x)
+                    packed.append(coord.y)
+                    packed.append(coord.z)
+                    packed.append(encodedState)
+                }
+                serializedChunks.append(SavedChunkData(cx: chunk.cx, cz: chunk.cz, packedBlocks: packed))
+            }
+
+            let serializedDeltas = modifiedBlocksSnapshot.map { (coord, rawVal) in
+                SavedBlockDelta(
+                    x: coord.x,
+                    y: coord.y,
+                    z: coord.z,
+                    typeRaw: rawVal,
+                    waterLevel: (rawVal == BlockType.water.rawValue) ? (waterSpreadLevelsSnapshot[coord] ?? 4) : nil,
+                    isOpen: openToggleBlocksSnapshot.contains(coord) ? true : nil,
+                    direction: blockOrientationsSnapshot[coord]
+                )
+            }
+
+            var serializedInventory: [Int: Int] = [:]
+            for (type, count) in invSnapshot {
+                serializedInventory[type.rawValue] = count
+            }
+
+            let snapshot = SavedWorld(
+                id: worldID,
+                name: worldName,
+                seed: seed,
+                archetypeName: archetypeTitle,
+                savedAt: Date(),
+                savedChunks: serializedChunks,
+                deltas: serializedDeltas,
+                blocks: nil,
+                inventory: serializedInventory,
+                playerX: pPos.x,
+                playerY: pPos.y,
+                playerZ: pPos.z,
+                yaw: pYaw,
+                pitch: pPitch
+            )
+
+            DispatchQueue.main.async {
+                if let idx = self.savedWorlds.firstIndex(where: { $0.id == worldID }) {
+                    self.savedWorlds[idx] = snapshot
+                } else {
+                    self.savedWorlds.insert(snapshot, at: 0)
+                }
+                self.savedWorlds.sort { $0.savedAt > $1.savedAt }
+                self.persistSavedWorlds()
+                if !silent {
+                    self.statusToast = "Saved '\(worldName)'!"
+                }
+            }
         }
     }
 
@@ -3067,15 +3172,17 @@ final class VoxelWorld: NSObject, ObservableObject {
             }
         }
 
-        // Calculate real-time FPS smoothed over ~0.35s
+        // Calculate real-time FPS smoothed over ~0.45s with exponential moving average
         fpsFrameCounter += 1
-        fpsTimeAccumulator += clampedDt
-        if fpsTimeAccumulator >= 0.35 {
-            let calculated = Int(round(Float(fpsFrameCounter) / fpsTimeAccumulator))
+        fpsTimeAccumulator += dt
+        if fpsTimeAccumulator >= 0.45 {
+            let instantaneous = Int(round(Float(fpsFrameCounter) / fpsTimeAccumulator))
             fpsFrameCounter = 0
             fpsTimeAccumulator = 0.0
-            if currentFPS != calculated {
-                currentFPS = calculated
+            let smoothed = Int(round(Double(currentFPS) * 0.70 + Double(instantaneous) * 0.30))
+            let finalFPS = max(1, smoothed)
+            if currentFPS != finalFPS {
+                currentFPS = finalFPS
             }
         }
 

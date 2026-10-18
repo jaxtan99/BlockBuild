@@ -15,6 +15,7 @@ struct ContentView: View {
     @State private var dragHotbarDelta: CGSize = .zero
     @State private var dragActionDelta: CGSize = .zero
     @State private var dragVerticalDelta: CGSize = .zero
+    @State private var dragDoorDelta: CGSize = .zero
 
     var body: some View {
         ZStack {
@@ -79,6 +80,22 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showingSkinsSheet) {
             CharacterSkinsSheet(world: world)
+        }
+        .onChange(of: showingSettingsSheet) { _ in
+            world.resetInputState()
+            joystickOffset = .zero
+        }
+        .onChange(of: showingSkinsSheet) { _ in
+            world.resetInputState()
+            joystickOffset = .zero
+        }
+        .onChange(of: showingWorldsSheet) { _ in
+            world.resetInputState()
+            joystickOffset = .zero
+        }
+        .onChange(of: showingMultiplayerSheet) { _ in
+            world.resetInputState()
+            joystickOffset = .zero
         }
     }
 
@@ -349,6 +366,19 @@ struct ContentView: View {
                     .multilineTextAlignment(.center)
                     .foregroundColor(.cyan)
             }
+
+            if !world.isEditingControls {
+                JoystickTouchOverlay(maxRadius: 38.0) { move, offset in
+                    joystickOffset = offset
+                    world.moveInput = move
+                } onEnd: {
+                    withAnimation(.spring(response: 0.2)) {
+                        joystickOffset = .zero
+                    }
+                    world.resetInputState()
+                }
+                .frame(width: 108, height: 108)
+            }
         }
         .scaleEffect(world.controlLayout.joystickScale)
         .opacity(world.controlLayout.controlOpacity)
@@ -357,44 +387,17 @@ struct ContentView: View {
             y: world.controlLayout.joystickOffsetY + dragJoyDelta.height
         )
         .gesture(
+            world.isEditingControls ?
             DragGesture(minimumDistance: 0)
                 .onChanged { value in
-                    if world.isEditingControls {
-                        dragJoyDelta = value.translation
-                    } else {
-                        let maxRadius: CGFloat = 38.0
-                        let dx = value.translation.width
-                        let dy = value.translation.height
-                        let dist = sqrt(dx * dx + dy * dy)
-                        let clampedDist = min(dist, maxRadius)
-                        let angle = atan2(dy, dx)
-
-                        let cx = cos(angle) * clampedDist
-                        let cy = sin(angle) * clampedDist
-                        joystickOffset = CGSize(width: cx, height: cy)
-
-                        // Smooth progressive curve with gentle deadzone for precision creeping & getting into tight spots
-                        let normDist = clampedDist / maxRadius
-                        let activeNorm = max(0, normDist - 0.08) / 0.92
-                        let curvedSpeed = pow(activeNorm, 1.45)
-                        world.moveInput = CGPoint(
-                            x: cos(angle) * curvedSpeed,
-                            y: -sin(angle) * curvedSpeed
-                        )
-                    }
+                    dragJoyDelta = value.translation
                 }
                 .onEnded { value in
-                    if world.isEditingControls {
-                        world.controlLayout.joystickOffsetX += value.translation.width
-                        world.controlLayout.joystickOffsetY += value.translation.height
-                        dragJoyDelta = .zero
-                    } else {
-                        withAnimation(.spring(response: 0.2)) {
-                            joystickOffset = .zero
-                        }
-                        world.moveInput = .zero
-                    }
+                    world.controlLayout.joystickOffsetX += value.translation.width
+                    world.controlLayout.joystickOffsetY += value.translation.height
+                    dragJoyDelta = .zero
                 }
+            : nil
         )
     }
 
@@ -471,26 +474,57 @@ struct ContentView: View {
         )
     }
 
-    private var rightActionCluster: some View {
-        VStack(alignment: world.controlLayout.swapLeftRight ? .leading : .trailing, spacing: 9) {
-            // Contextual OPEN/CLOSE button when looking at a Door or Trapdoor
-            if let target = world.targetedBlockType, target.isToggleable, !world.isEditingControls {
-                Button {
-                    world.toggleTargetedDoorOrTrapdoor()
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: world.isTargetedBlockOpen ? "door.left.hand.closed" : "door.left.hand.open")
-                            .font(.system(size: 13, weight: .bold))
-                        Text(world.isTargetedBlockOpen ? "CLOSE \(target.displayName.uppercased())" : "OPEN \(target.displayName.uppercased())")
-                            .font(.system(size: 10, weight: .heavy, design: .monospaced))
-                    }
-                    .foregroundColor(.black)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Color.yellow)
-                    .cornerRadius(10)
-                }
+    private var doorActionButton: some View {
+        Button {
+            if !world.isEditingControls {
+                world.toggleTargetedDoorOrTrapdoor()
             }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: world.isTargetedBlockOpen ? "door.left.hand.closed" : "door.left.hand.open")
+                    .font(.system(size: 13, weight: .bold))
+                Text(world.isEditingControls ? "DRAG DOOR BTN" : (world.isTargetedBlockOpen ? "CLOSE DOOR" : "OPEN DOOR"))
+                    .font(.system(size: 10, weight: .heavy, design: .monospaced))
+            }
+            .foregroundColor(.black)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(world.isEditingControls ? Color.cyan : Color.yellow)
+            .cornerRadius(10)
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(world.isEditingControls ? Color.white : Color.clear, lineWidth: 2)
+            )
+        }
+        .scaleEffect(world.controlLayout.actionScale)
+        .opacity(world.controlLayout.controlOpacity)
+        .offset(
+            x: world.controlLayout.doorButtonOffsetX + dragDoorDelta.width,
+            y: world.controlLayout.doorButtonOffsetY + dragDoorDelta.height
+        )
+        .gesture(
+            world.isEditingControls ?
+            DragGesture()
+                .onChanged { val in
+                    dragDoorDelta = val.translation
+                }
+                .onEnded { val in
+                    world.controlLayout.doorButtonOffsetX += val.translation.width
+                    world.controlLayout.doorButtonOffsetY += val.translation.height
+                    dragDoorDelta = .zero
+                }
+            : nil
+        )
+    }
+
+    private var rightActionCluster: some View {
+        ZStack(alignment: world.controlLayout.swapLeftRight ? .bottomLeading : .bottomTrailing) {
+            // Contextual OPEN/CLOSE button (independently movable, higher by default so it never interferes with controls)
+            if (world.targetedBlockType?.isToggleable == true && !world.isEditingControls) || world.isEditingControls {
+                doorActionButton
+            }
+
+            VStack(alignment: world.controlLayout.swapLeftRight ? .leading : .trailing, spacing: 9) {
 
             // UP / DOWN Buttons (independently draggable in Edit Controls mode)
             HStack(spacing: 8) {
@@ -607,6 +641,7 @@ struct ContentView: View {
                     }
                 : nil
             )
+        }
         }
     }
 
@@ -1719,6 +1754,82 @@ private struct InstantTouchOverlay: UIViewRepresentable {
         ) -> Bool {
             return true
         }
+    }
+}
+
+// Zero-sticking UIKit touch overlay that guarantees reset on touchesEnded and touchesCancelled
+private struct JoystickTouchOverlay: UIViewRepresentable {
+    let maxRadius: CGFloat
+    let onMove: (CGPoint, CGSize) -> Void
+    let onEnd: () -> Void
+
+    func makeUIView(context: Context) -> JoystickTouchUIView {
+        let view = JoystickTouchUIView()
+        view.backgroundColor = .clear
+        view.isMultipleTouchEnabled = false
+        view.maxRadius = maxRadius
+        view.onMove = onMove
+        view.onEnd = onEnd
+        return view
+    }
+
+    func updateUIView(_ uiView: JoystickTouchUIView, context: Context) {
+        uiView.maxRadius = maxRadius
+        uiView.onMove = onMove
+        uiView.onEnd = onEnd
+    }
+}
+
+private final class JoystickTouchUIView: UIView {
+    var maxRadius: CGFloat = 38.0
+    var onMove: ((CGPoint, CGSize) -> Void)?
+    var onEnd: (() -> Void)?
+    private weak var activeTouch: UITouch?
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        if activeTouch == nil, let touch = touches.first {
+            activeTouch = touch
+            handleTouch(touch)
+        }
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let touch = activeTouch, touches.contains(touch) else { return }
+        handleTouch(touch)
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let touch = activeTouch, touches.contains(touch) else { return }
+        activeTouch = nil
+        onEnd?()
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        activeTouch = nil
+        onEnd?()
+    }
+
+    private func handleTouch(_ touch: UITouch) {
+        let loc = touch.location(in: self)
+        let center = CGPoint(x: bounds.midX, y: bounds.midY)
+        let dx = loc.x - center.x
+        let dy = loc.y - center.y
+        let dist = sqrt(dx * dx + dy * dy)
+        let clampedDist = min(dist, maxRadius)
+        let angle = atan2(dy, dx)
+
+        let cx = cos(angle) * clampedDist
+        let cy = sin(angle) * clampedDist
+        let offset = CGSize(width: cx, height: cy)
+
+        let normDist = clampedDist / maxRadius
+        let activeNorm = max(0, normDist - 0.08) / 0.92
+        let curvedSpeed = pow(activeNorm, 1.45)
+        let move = CGPoint(
+            x: cos(angle) * curvedSpeed,
+            y: -sin(angle) * curvedSpeed
+        )
+        onMove?(move, offset)
     }
 }
 
