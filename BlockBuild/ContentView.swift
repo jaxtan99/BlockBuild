@@ -279,23 +279,8 @@ struct ContentView: View {
                             .cornerRadius(8)
                     }
 
-                    // 4. Settings or Finish Editing Controls
-                    if world.isEditingControls {
-                        Button {
-                            withAnimation {
-                                world.finishEditingControls()
-                            }
-                        } label: {
-                            Label("DONE / PLAY", systemImage: "checkmark.circle.fill")
-                                .font(.system(size: 10, weight: .black, design: .monospaced))
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 7)
-                                .background(Color.green)
-                                .cornerRadius(8)
-                                .shadow(color: .green.opacity(0.8), radius: 4)
-                        }
-                    } else {
+                    // 4. Settings (hidden while customizing HUD controls)
+                    if !world.isEditingControls {
                         Button {
                             showingSettingsSheet = true
                         } label: {
@@ -685,16 +670,6 @@ struct ControlLayoutEditorBanner: View {
                         .foregroundColor(.white)
                         .cornerRadius(6)
                         .shadow(color: .green.opacity(0.8), radius: 3)
-                }
-
-                Button {
-                    withAnimation {
-                        world.finishEditingControls()
-                    }
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 20))
-                        .foregroundColor(.white.opacity(0.85))
                 }
             }
 
@@ -1150,24 +1125,13 @@ struct MainMenuView: View {
                         showingWorldsSheet = true
                     }
 
-                    HStack(spacing: 10) {
-                        MainMenuButton(
-                            title: "SKINS",
-                            subtitle: "\(world.selectedSkin.displayName)",
-                            icon: "person.crop.artframe",
-                            color: .purple
-                        ) {
-                            showingSkinsSheet = true
-                        }
-
-                        MainMenuButton(
-                            title: "MULTIPLAYER",
-                            subtitle: world.connectedPlayerNames.isEmpty ? "Local Wi-Fi Co-Op" : "\(world.connectedPlayerNames.count) Connected",
-                            icon: "person.2.wave.2.fill",
-                            color: .pink
-                        ) {
-                            showingMultiplayerSheet = true
-                        }
+                    MainMenuButton(
+                        title: "MULTIPLAYER",
+                        subtitle: world.connectedPlayerNames.isEmpty ? "Local Wi-Fi Co-Op" : "\(world.connectedPlayerNames.count) Connected",
+                        icon: "person.2.wave.2.fill",
+                        color: .pink
+                    ) {
+                        showingMultiplayerSheet = true
                     }
 
                     MainMenuButton(

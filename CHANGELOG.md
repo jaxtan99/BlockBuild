@@ -10,6 +10,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [1.3.1] - 2026-10-18
+
+### Changed
+- **Main Menu UI Cleanup**: Removed duplicate purple "SKINS" button from the main menu action grid. The equipped skin preview pill at the top of the menu continues to provide one-tap access to character skin customization, and "MULTIPLAYER" now matches full-width styling alongside "PLAY WORLDS" and "SETTINGS".
+- **Single UI Controls Save Button**: Removed duplicate save/dismiss controls in the HUD layout customizer (removed redundant "xmark" close button in the banner and duplicate "DONE / PLAY" button in the top bar), leaving a single, prominent "SAVE & PLAY" action to commit layout changes.
+
+---
+
 ## [1.3.0] - 2026-10-18
 
 ### Added
