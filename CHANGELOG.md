@@ -10,6 +10,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [1.6.0] - 2026-10-19
+
+### Added
+- **5 Custom Texture Packs (with Live Previews)**:
+  - Added a dedicated **Texture Packs** selector in Settings (accessible in-game and from the main menu) allowing players to re-theme all 15 blocks in real-time:
+    1. **Medieval RPG**: Hand-chiseled ashlar castle stone, aged rustic dark oak, forged iron square-studded planks, iron-strapped dungeon doors, slate roof shingles, deep olive canopy leaves, mossy cobblestone, and dark peat earth.
+    2. **Cyber Neon**: Carbon-alloy plating with glowing cyan circuit veins, titanium panels with corner LED diodes, holographic forcefield glass with scanlines, blast doors with hazard stripes and biometric scanners, photovoltaic solar panel roofs, and energized plasma coolant water.
+    3. **Cozy Pastel**: Soft, vibrant, candy-coated minimalist aesthetic with rounded lavender/slate river stones, silky smooth cream plaster, pastel mint meadow grass, Scandinavian birch logs, light blonde Nordic pine, cute cottage doors with brass knobs, and turquoise lagoon water.
+    4. **Dark Nether**: Jagged obsidian and basalt with molten glowing magma fissures, polished black basalt, crimson nether fungus turf, charred wood with glowing orange crevices, warped crimson bloodwood planks, smoked obsidian glass, and bioluminescent abyssal violet water.
+    5. **Winter Frost**: Snow-frosted glacial cobblestone with blue ice crystals, rime-veined permafrost stone, pure white snow-dusted turf with hanging icicles, snowy spruce pine trunks, frost-weathered pale driftwood planks, delicate Jack Frost fern-crystal windows, and pale icy alpine water.
+    6. **Classic Voxel**: The original nostalgic 16-bit block art.
+  - **Instant Dynamic Swap**: Instantly updates all active 3D block geometries, materials, transparent water masks, doors, roofs, slabs, and inventory hotbar icons in real-time with zero lag or chunk reloading.
+  - **Settings UI & Live Previews**: Features a Texture Packs sheet showing each pack's theme icon, descriptive subtitle, active status badge, and a live 6-block preview strip showing actual rendered textures.
+
+---
+
 ## [1.5.2] - 2026-10-19
 
 ### Changed

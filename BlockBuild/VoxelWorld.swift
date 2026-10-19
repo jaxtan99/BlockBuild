@@ -1034,6 +1034,7 @@ final class VoxelWorld: NSObject, ObservableObject {
     // Navigation state: Main Menu vs Active Gameplay
     @Published var isInGame: Bool = false
     @Published var selectedSkin: PlayerSkin = .steve
+    @Published var currentTexturePack: TexturePack = .classic
 
     // Local Multiplayer State (Enabled by default, continuously signals nearby players)
     @Published var isMultiplayerEnabled: Bool = true {
@@ -1155,6 +1156,11 @@ final class VoxelWorld: NSObject, ObservableObject {
         if let savedSkin = UserDefaults.standard.string(forKey: "blockbuild_selected_skin"),
            let skin = PlayerSkin(rawValue: savedSkin) {
             self.selectedSkin = skin
+        }
+        if let savedPack = UserDefaults.standard.string(forKey: "blockbuild_texture_pack"),
+           let pack = TexturePack(rawValue: savedPack) {
+            self.currentTexturePack = pack
+            BlockType.activeTexturePack = pack
         }
         let savedDistance = UserDefaults.standard.integer(forKey: "blockbuild_render_distance")
         if savedDistance >= 2 && savedDistance <= 8 {
@@ -1293,38 +1299,38 @@ final class VoxelWorld: NSObject, ObservableObject {
     private func setupGeometries() {
         for type in BlockType.allCases {
             let box = SCNBox(width: 1.0, height: 1.0, length: 1.0, chamferRadius: 0.0)
-            box.materials = type.materials
+            box.materials = type.materials(for: currentTexturePack)
             sharedGeometries[type] = box
         }
 
         // Full block size water (1.0 x 1.0 x 1.0) like normal blocks
         let wBox = SCNBox(width: 1.0, height: 1.0, length: 1.0, chamferRadius: 0.0)
-        wBox.materials = BlockType.water.materials
+        wBox.materials = BlockType.water.materials(for: currentTexturePack)
         for lvl in 1...4 {
             waterLevelGeometries[lvl] = wBox
         }
 
         // Door geometries (closed vs open)
         doorClosedGeo = SCNBox(width: 1.0, height: 1.0, length: 0.20, chamferRadius: 0.0)
-        doorClosedGeo.materials = BlockType.door.materials
+        doorClosedGeo.materials = BlockType.door.materials(for: currentTexturePack)
 
         doorOpenGeo = SCNBox(width: 0.20, height: 1.0, length: 1.0, chamferRadius: 0.0)
-        doorOpenGeo.materials = BlockType.door.materials
+        doorOpenGeo.materials = BlockType.door.materials(for: currentTexturePack)
 
         // Roof stepped geometries
         roofBaseGeo = SCNBox(width: 1.0, height: 0.50, length: 1.0, chamferRadius: 0.0)
-        roofBaseGeo.materials = BlockType.roof.materials
+        roofBaseGeo.materials = BlockType.roof.materials(for: currentTexturePack)
 
         roofStepGeo = SCNBox(width: 1.0, height: 0.50, length: 0.50, chamferRadius: 0.0)
-        roofStepGeo.materials = BlockType.roof.materials
+        roofStepGeo.materials = BlockType.roof.materials(for: currentTexturePack)
 
         // Roof corner step geometry: quarter-cube (0.50 x 0.50 x 0.50) - half the top of normal stair
         roofCornerStepGeo = SCNBox(width: 0.50, height: 0.50, length: 0.50, chamferRadius: 0.0)
-        roofCornerStepGeo.materials = BlockType.roofCorner.materials
+        roofCornerStepGeo.materials = BlockType.roofCorner.materials(for: currentTexturePack)
 
         // Slab geometry (1.0 x 0.50 x 1.0) - based off the roof block
         slabGeo = SCNBox(width: 1.0, height: 0.50, length: 1.0, chamferRadius: 0.0)
-        slabGeo.materials = BlockType.slab.materials
+        slabGeo.materials = BlockType.slab.materials(for: currentTexturePack)
     }
 
     func roofAngle(for direction: Int) -> Float {
@@ -1449,6 +1455,39 @@ final class VoxelWorld: NSObject, ObservableObject {
             startMultiplayerServices()
         }
         statusToast = "Skin: \(skin.displayName)"
+    }
+
+    func setTexturePack(_ pack: TexturePack) {
+        guard currentTexturePack != pack else { return }
+        currentTexturePack = pack
+        UserDefaults.standard.set(pack.rawValue, forKey: "blockbuild_texture_pack")
+        applyTexturePack()
+    }
+
+    func applyTexturePack() {
+        BlockType.activeTexturePack = currentTexturePack
+
+        for type in BlockType.allCases {
+            sharedGeometries[type]?.materials = type.materials(for: currentTexturePack)
+        }
+
+        doorClosedGeo.materials = BlockType.door.materials(for: currentTexturePack)
+        doorOpenGeo.materials = BlockType.door.materials(for: currentTexturePack)
+        roofBaseGeo.materials = BlockType.roof.materials(for: currentTexturePack)
+        roofStepGeo.materials = BlockType.roof.materials(for: currentTexturePack)
+        roofCornerStepGeo.materials = BlockType.roofCorner.materials(for: currentTexturePack)
+        slabGeo.materials = BlockType.slab.materials(for: currentTexturePack)
+
+        waterMaskedGeometries.removeAll()
+
+        for (coord, node) in blockNodes {
+            if blocks[coord] == .water {
+                let mask = waterFaceMask(at: coord)
+                node.geometry = maskedWaterGeometry(level: 4, faceMask: mask)
+            }
+        }
+
+        statusToast = "Applied \(currentTexturePack.displayName) Pack"
     }
 
     func regenerateNewWorld(type: WorldType = .standard, customName: String? = nil) {
@@ -3067,7 +3106,7 @@ final class VoxelWorld: NSObject, ObservableObject {
         }
 
         let box = SCNBox(width: 1.0, height: 1.0, length: 1.0, chamferRadius: 0.0)
-        let visibleMat = BlockType.water.materials.first!
+        let visibleMat = BlockType.water.materials(for: currentTexturePack).first!
         let hiddenMat = BlockType.invisibleMaterial
 
         var mats: [SCNMaterial] = []

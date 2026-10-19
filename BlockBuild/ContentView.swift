@@ -9,6 +9,7 @@ struct ContentView: View {
     @State private var showingMultiplayerSheet = false
     @State private var showingSettingsSheet = false
     @State private var showingSkinsSheet = false
+    @State private var showingTexturePacksSheet = false
     @State private var showCameraFlash = false
 
     // Temporary drag states while dragging HUD elements in Edit Controls mode
@@ -76,17 +77,25 @@ struct ContentView: View {
             InGameSettingsSheet(
                 world: world,
                 showingSkinsSheet: $showingSkinsSheet,
-                showingWorldsSheet: $showingWorldsSheet
+                showingWorldsSheet: $showingWorldsSheet,
+                showingTexturePacksSheet: $showingTexturePacksSheet
             )
         }
         .sheet(isPresented: $showingSkinsSheet) {
             CharacterSkinsSheet(world: world)
+        }
+        .sheet(isPresented: $showingTexturePacksSheet) {
+            TexturePacksSheet(world: world)
         }
         .onChange(of: showingSettingsSheet) { _ in
             world.resetInputState()
             joystickOffset = .zero
         }
         .onChange(of: showingSkinsSheet) { _ in
+            world.resetInputState()
+            joystickOffset = .zero
+        }
+        .onChange(of: showingTexturePacksSheet) { _ in
             world.resetInputState()
             joystickOffset = .zero
         }
@@ -105,6 +114,7 @@ struct ContentView: View {
         showingMultiplayerSheet = false
         showingSettingsSheet = false
         showingSkinsSheet = false
+        showingTexturePacksSheet = false
     }
 
     private func triggerCameraFlash() {
@@ -1477,12 +1487,159 @@ struct CharacterSkinsSheet: View {
     }
 }
 
+// MARK: - Texture Packs Selection Sheet
+
+struct TexturePacksSheet: View {
+    @ObservedObject var world: VoxelWorld
+    @Environment(\.dismiss) private var dismiss
+
+    private let sampleBlocks: [BlockType] = [.grass, .stone, .woodPlanks, .door, .glass, .water]
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 16) {
+                    // Header card
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Image(systemName: "paintpalette.fill")
+                                .foregroundColor(.cyan)
+                                .font(.system(size: 16, weight: .bold))
+                            Text("TEXTURE PACKS")
+                                .font(.system(size: 13, weight: .black, design: .monospaced))
+                                .foregroundColor(.white)
+                            Spacer()
+                            Text("\(TexturePack.allCases.count) PACKS")
+                                .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                                .foregroundColor(.yellow)
+                        }
+                        Text("Transform all blocks in your world in real-time. Choose a custom theme below to instantly re-style all 15 voxel block types.")
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.8))
+                    }
+                    .padding(14)
+                    .background(Color.black.opacity(0.65))
+                    .cornerRadius(12)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.white.opacity(0.25), lineWidth: 1)
+                    )
+
+                    // Texture Packs List
+                    VStack(spacing: 12) {
+                        ForEach(TexturePack.allCases) { pack in
+                            let isSelected = (world.currentTexturePack == pack)
+
+                            Button {
+                                UISelectionFeedbackGenerator().selectionChanged()
+                                world.setTexturePack(pack)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 10) {
+                                    HStack(spacing: 12) {
+                                        ZStack {
+                                            Circle()
+                                                .fill(pack.themeColor.opacity(isSelected ? 0.35 : 0.18))
+                                                .frame(width: 36, height: 36)
+                                            Image(systemName: pack.iconName)
+                                                .font(.system(size: 16, weight: .bold))
+                                                .foregroundColor(pack.themeColor)
+                                        }
+
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            HStack(spacing: 6) {
+                                                Text(pack.displayName)
+                                                    .font(.system(size: 14, weight: .bold, design: .monospaced))
+                                                    .foregroundColor(.white)
+
+                                                if isSelected {
+                                                    Text("ACTIVE")
+                                                        .font(.system(size: 9, weight: .black, design: .monospaced))
+                                                        .foregroundColor(.black)
+                                                        .padding(.horizontal, 6)
+                                                        .padding(.vertical, 2)
+                                                        .background(Color.green)
+                                                        .cornerRadius(4)
+                                                }
+                                            }
+
+                                            Text(pack.subtitle)
+                                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                                .foregroundColor(.white.opacity(0.72))
+                                                .lineLimit(2)
+                                        }
+
+                                        Spacer()
+
+                                        if isSelected {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .foregroundColor(.green)
+                                                .font(.system(size: 20))
+                                        }
+                                    }
+
+                                    // Live Block Preview Strip
+                                    HStack(spacing: 8) {
+                                        ForEach(sampleBlocks) { block in
+                                            VStack(spacing: 3) {
+                                                Image(uiImage: block.iconImage(for: pack))
+                                                    .interpolation(.none)
+                                                    .resizable()
+                                                    .scaledToFit()
+                                                    .frame(width: 32, height: 32)
+                                                    .background(Color.black.opacity(0.5))
+                                                    .cornerRadius(6)
+                                                    .overlay(
+                                                        RoundedRectangle(cornerRadius: 6)
+                                                            .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                                                    )
+
+                                                Text(block.displayName)
+                                                    .font(.system(size: 8, weight: .bold, design: .monospaced))
+                                                    .foregroundColor(.white.opacity(0.75))
+                                                    .lineLimit(1)
+                                            }
+                                        }
+                                    }
+                                    .padding(.top, 2)
+                                }
+                                .padding(12)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .fill(isSelected ? pack.themeColor.opacity(0.16) : Color.black.opacity(0.55))
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .stroke(isSelected ? pack.themeColor : Color.white.opacity(0.18), lineWidth: isSelected ? 2 : 1)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .padding(16)
+            }
+            .background(Color(red: 0.12, green: 0.13, blue: 0.16).ignoresSafeArea())
+            .navigationTitle("Texture Packs")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                    .font(.system(size: 13, weight: .bold, design: .monospaced))
+                }
+            }
+        }
+    }
+}
+
 // MARK: - In-Game Settings Sheet
 
 struct InGameSettingsSheet: View {
     @ObservedObject var world: VoxelWorld
     @Binding var showingSkinsSheet: Bool
     @Binding var showingWorldsSheet: Bool
+    @Binding var showingTexturePacksSheet: Bool
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -1532,6 +1689,32 @@ struct InGameSettingsSheet: View {
                                     .font(.system(size: 13, weight: .bold, design: .monospaced))
                                     .foregroundColor(.white)
                                 Text("Current: \(world.selectedSkin.displayName)")
+                                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                    .foregroundColor(.cyan)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .foregroundColor(.gray)
+                        }
+                    }
+
+                    Button {
+                        showingTexturePacksSheet = true
+                    } label: {
+                        HStack {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(world.currentTexturePack.themeColor.opacity(0.25))
+                                    .frame(width: 24, height: 24)
+                                Image(systemName: world.currentTexturePack.iconName)
+                                    .foregroundColor(world.currentTexturePack.themeColor)
+                                    .font(.system(size: 13, weight: .bold))
+                            }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Texture Packs")
+                                    .font(.system(size: 13, weight: .bold, design: .monospaced))
+                                    .foregroundColor(.white)
+                                Text("Current: \(world.currentTexturePack.displayName)")
                                     .font(.system(size: 10, weight: .medium, design: .monospaced))
                                     .foregroundColor(.cyan)
                             }
