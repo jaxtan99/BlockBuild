@@ -9,6 +9,7 @@ struct ContentView: View {
     @State private var showingMultiplayerSheet = false
     @State private var showingSettingsSheet = false
     @State private var showingSkinsSheet = false
+    @State private var showCameraFlash = false
 
     // Temporary drag states while dragging HUD elements in Edit Controls mode
     @State private var dragJoyDelta: CGSize = .zero
@@ -106,6 +107,17 @@ struct ContentView: View {
         showingSkinsSheet = false
     }
 
+    private func triggerCameraFlash() {
+        withAnimation(.easeOut(duration: 0.06)) {
+            showCameraFlash = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.10) {
+            withAnimation(.easeOut(duration: 0.25)) {
+                showCameraFlash = false
+            }
+        }
+    }
+
     private func multiplayerJoinBanner(_ prompt: MultiplayerJoinPrompt) -> some View {
         VStack {
             HStack(spacing: 12) {
@@ -174,6 +186,14 @@ struct ContentView: View {
             // 1. 3D Voxel World View + Look Drag Gesture
             VoxelSceneView(world: world)
                 .ignoresSafeArea()
+
+            // Visual camera shutter flash effect
+            if showCameraFlash {
+                Color.white
+                    .ignoresSafeArea()
+                    .transition(.opacity)
+                    .allowsHitTesting(false)
+            }
 
             // 2. True Center Crosshair (Dead-center on full screen, locked to camera line-of-sight)
             ZStack {
@@ -296,7 +316,21 @@ struct ContentView: View {
                             .cornerRadius(8)
                     }
 
-                    // 4. Settings (hidden while customizing HUD controls)
+                    // 4. Photo / Screenshot (Pure 3D world with no buttons, crosshairs, or UI)
+                    Button {
+                        triggerCameraFlash()
+                        world.captureCleanScreenshot()
+                    } label: {
+                        Label("Photo", systemImage: "camera.fill")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 7)
+                            .background(Color.purple.opacity(0.85))
+                            .cornerRadius(8)
+                    }
+
+                    // 5. Settings (hidden while customizing HUD controls)
                     if !world.isEditingControls {
                         Button {
                             showingSettingsSheet = true
@@ -1906,6 +1940,7 @@ struct VoxelSceneView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> SCNView {
         let scnView = SCNView()
+        world.registerSceneView(scnView)
         scnView.scene = world.scene
         scnView.pointOfView = world.cameraNode
         scnView.autoenablesDefaultLighting = false
@@ -1930,6 +1965,9 @@ struct VoxelSceneView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: SCNView, context: Context) {
+        if world.sceneView !== uiView {
+            world.registerSceneView(uiView)
+        }
         let targetFPS = (world.fpsLimit == 0) ? 0 : world.fpsLimit
         if uiView.preferredFramesPerSecond != targetFPS {
             uiView.preferredFramesPerSecond = targetFPS

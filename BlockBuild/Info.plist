@@ -11,5 +11,7 @@
 	<string>BlockBuild uses your local network so nearby players can join and build together in your world.</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>BlockBuild uses Bluetooth for local peer-to-peer multiplayer.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>BlockBuild needs access to save screenshots of your world directly to your Photos library.</string>
 </dict>
 </plist>

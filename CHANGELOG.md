@@ -10,6 +10,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [1.5.1] - 2026-10-18
+
+### Fixed
+- **Cave Lands World Generation Crash**:
+  - Fixed a fatal range error crash in cavern water generation (`Range requires lowerBound <= upperBound`) when `floorH == 4` by updating condition to `if floorH < 4`.
+  - Cleared spawn column `(abs(x) <= 1 && abs(z) <= 1)` of stalactites, stalagmites, and stone pillars to ensure a clean, unobstructed spawn.
+  - Optimized block visibility check in `isBlockExposed` to skip impenetrable ceiling roof blocks (`coord.y >= 30` in Cave Lands), preventing thousands of unnecessary hidden node allocations.
+
+### Added
+- **Clean World Screenshot to Photos**:
+  - Added a "Photo" camera button to the in-game top HUD bar.
+  - Captures *only* the 3D voxel world: completely excludes all SwiftUI HUD buttons, coordinates, labels, hotbar, joystick, and center crosshair/reticle.
+  - Temporarily hides the 3D block selection wireframe during snapshot so nothing obscures the view.
+  - Automatically saves the snapshot directly to the iOS Photos library via `UIImageWriteToSavedPhotosAlbum` with `PhotoAlbumSaver`.
+  - Added visual camera shutter flash animation and haptic feedback on capture.
+  - Added `NSPhotoLibraryAddUsageDescription` to `Info.plist` to safely authorize saving screenshots to the user's Photos library.
+
+---
+
 ## [1.5.0] - 2026-10-18
 
 ### Added

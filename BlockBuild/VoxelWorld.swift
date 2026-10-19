@@ -1146,6 +1146,10 @@ final class VoxelWorld: NSObject, ObservableObject {
     private let saveFileName = "blockbuild_saved_worlds_v2.json"
     private let controlLayoutKey = "blockbuild_control_layout_v1"
 
+    // SCNView reference & Screenshot Capture
+    weak var sceneView: SCNView?
+    private var activePhotoSaver: PhotoAlbumSaver?
+
     override init() {
         super.init()
         if let savedSkin = UserDefaults.standard.string(forKey: "blockbuild_selected_skin"),
@@ -1816,7 +1820,7 @@ final class VoxelWorld: NSObject, ObservableObject {
                     }
 
                     // Water pools in low cavern basins
-                    if floorH <= 4 {
+                    if floorH < 4 {
                         for y in (floorH + 1)...4 {
                             let wCoord = BlockCoord(x: x, y: y, z: z)
                             localBlocks[wCoord] = .water
@@ -1824,16 +1828,17 @@ final class VoxelWorld: NSObject, ObservableObject {
                         }
                     }
 
-                    // Cavern ceiling at y=27...29, impenetrable bedrock roof at y=31
+                    // Cavern ceiling at y=27...29, impenetrable bedrock roof at y=30
                     let ceilNoise = ridgeNoise.noise(Float(x) * 0.04, Float(z) * 0.04)
                     let ceilBot = max(26, min(29, Int(28.0 + ceilNoise * 2.0)))
-                    for y in ceilBot...31 {
+                    for y in ceilBot...30 {
                         let c = BlockCoord(x: x, y: y, z: z)
-                        localBlocks[c] = (y == 31) ? .stone : .smoothStone
+                        localBlocks[c] = (y == 30) ? .stone : .smoothStone
                     }
 
                     // Stalagmites (rising from floor), Stalactites (hanging from ceiling), and Giant Pillars
-                    let colNoise = ridgeNoise.noise(Float(x) * 0.075, Float(z) * 0.075)
+                    let isSpawnCol = (abs(x) <= 1 && abs(z) <= 1)
+                    let colNoise = isSpawnCol ? 0.0 : ridgeNoise.noise(Float(x) * 0.075, Float(z) * 0.075)
                     if colNoise > 0.55 {
                         // Full Cavern Pillar connecting floor to ceiling
                         for y in (floorH + 1)..<ceilBot {
@@ -3081,6 +3086,10 @@ final class VoxelWorld: NSObject, ObservableObject {
 
     private func isBlockExposed(_ coord: BlockCoord) -> Bool {
         guard let myType = blocks[coord] else { return false }
+        if currentWorldType == .caveLands && coord.y >= 30 {
+            // Upper surface of cave ceiling is never visible to the player
+            return false
+        }
         if myType == .water {
             return waterFaceMask(at: coord) != 0
         }
@@ -4857,5 +4866,73 @@ extension VoxelWorld: MCSessionDelegate, MCNearbyServiceAdvertiserDelegate, MCNe
 
     nonisolated func browser(_ browser: MCNearbyServiceBrowser, didNotStartBrowsingForPeers error: Error) {
         print("[Multiplayer] Browser did not start: \(error.localizedDescription)")
+    }
+}
+
+// MARK: - Clean World Screenshot Capture & Photo Library Integration
+
+extension VoxelWorld {
+    func registerSceneView(_ view: SCNView) {
+        self.sceneView = view
+    }
+
+    func captureCleanScreenshot() {
+        guard let scnView = sceneView else {
+            statusToast = "Snapshot failed: 3D scene not ready"
+            return
+        }
+
+        // Hide 3D block selection wireframe so the snapshot is 100% clean world only
+        let wasSelectionHidden = selectionBoxNode.isHidden
+        selectionBoxNode.isHidden = true
+
+        let screenshotImage = scnView.snapshot()
+
+        selectionBoxNode.isHidden = wasSelectionHidden
+
+        let saver = PhotoAlbumSaver { [weak self] success, error in
+            guard let self = self else { return }
+            if success {
+                self.statusToast = "Screenshot saved to Photos!"
+                let generator = UINotificationFeedbackGenerator()
+                generator.notificationOccurred(.success)
+            } else {
+                let errStr = error?.localizedDescription ?? "Access denied or unknown error"
+                self.statusToast = "Failed to save photo: \(errStr)"
+                let generator = UINotificationFeedbackGenerator()
+                generator.notificationOccurred(.error)
+            }
+            self.activePhotoSaver = nil
+        }
+        self.activePhotoSaver = saver
+        saver.save(screenshotImage)
+    }
+}
+
+// MARK: - Photo Album Screenshot Saver
+
+final class PhotoAlbumSaver: NSObject {
+    private var onComplete: (@MainActor (Bool, Error?) -> Void)?
+
+    init(onComplete: (@MainActor (Bool, Error?) -> Void)?) {
+        self.onComplete = onComplete
+        super.init()
+    }
+
+    @MainActor
+    func save(_ image: UIImage) {
+        UIImageWriteToSavedPhotosAlbum(
+            image,
+            self,
+            #selector(image(_:didFinishSavingWithError:contextInfo:)),
+            nil
+        )
+    }
+
+    @objc func image(_ image: UIImage, didFinishSavingWithError error: Error?, contextInfo: UnsafeRawPointer?) {
+        Task { @MainActor in
+            self.onComplete?(error == nil, error)
+            self.onComplete = nil
+        }
     }
 }
