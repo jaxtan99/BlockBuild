@@ -10,6 +10,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [1.5.2] - 2026-10-19
+
+### Changed
+- **New App Icon**:
+  - Replaced the application icon with the custom voxel cabin landscape art, rendered as a full-resolution 1024x1024 universal iOS app icon in `AppIcon.appiconset`.
+
+---
+
 ## [1.5.1] - 2026-10-18
 
 ### Fixed
