@@ -10,6 +10,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [1.5.0] - 2026-10-18
+
+### Added
+- **3 New Selectable World Types**:
+  - **Cave Lands**: Subterranean world inside giant underground caverns with stone and cobblestone floor strata, underground lakes, towering stalactites hanging from above, stalagmites rising from below, grand stone pillars, glowing subterranean fungal trees, stone cabins, and an impenetrable cavern roof ceiling with full head clearance.
+  - **Ocean World**: Vast endless deep ocean waters (sea level at y=10) with submerged trenches, seabed strata (sand, dirt, stone), starting wooden spawn dock platform at (0, 0), and rare sea stacks rising out of the water.
+  - **Sea Islands**: Tropical archipelago surrounded by crystal blue ocean water (sea level at y=6), featuring golden sandy beaches, lush rolling island hills, tropical palm trees, island oaks, and wooden beach cabanas with piers.
+- **Dynamic Physics & Ceiling Constraints for Cave Lands**:
+  - Bounded vertical fly and jump ceiling at y=26.5 for Cave Lands to keep players immersed beneath the cavern ceiling vaults.
+
+---
+
 ## [1.4.9] - 2026-10-18
 
 ### Changed

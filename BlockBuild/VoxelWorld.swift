@@ -818,6 +818,9 @@ enum WorldType: String, CaseIterable, Identifiable, Codable {
     case skyIslands = "skyIslands"
     case amplified = "amplified"
     case desert = "desert"
+    case caveLands = "caveLands"
+    case oceanWorld = "oceanWorld"
+    case seaIslands = "seaIslands"
 
     var id: String { rawValue }
 
@@ -828,6 +831,9 @@ enum WorldType: String, CaseIterable, Identifiable, Codable {
         case .skyIslands: return "Sky Islands"
         case .amplified: return "Amplified Peaks"
         case .desert: return "Endless Desert"
+        case .caveLands: return "Cave Lands"
+        case .oceanWorld: return "Ocean World"
+        case .seaIslands: return "Sea Islands"
         }
     }
 
@@ -838,6 +844,9 @@ enum WorldType: String, CaseIterable, Identifiable, Codable {
         case .skyIslands: return "Floating islands in the open void, no invisible barrier"
         case .amplified: return "Towering extreme mountains, massive sheer cliffs & high waterfalls"
         case .desert: return "Vast rolling golden sand dunes, sandstone strata & hidden oases"
+        case .caveLands: return "Subterranean world of giant caverns, stone vaults & stalactites"
+        case .oceanWorld: return "Endless deep ocean waters, submerged trenches & isolated sandbars"
+        case .seaIslands: return "Tropical archipelago of lush islands, sandy beaches & crystal blue sea"
         }
     }
 
@@ -848,6 +857,9 @@ enum WorldType: String, CaseIterable, Identifiable, Codable {
         case .skyIslands: return "cloud.fill"
         case .amplified: return "mountain.2.fill"
         case .desert: return "sun.max.fill"
+        case .caveLands: return "flashlight.on.fill"
+        case .oceanWorld: return "water.waves"
+        case .seaIslands: return "leaf.fill"
         }
     }
 
@@ -1470,6 +1482,15 @@ final class VoxelWorld: NSObject, ObservableObject {
         } else if type == .amplified {
             let spawnGround = surfaceHeightAt(x: 0, z: 0)
             playerPosition = SCNVector3(0, Float(max(spawnGround, seaLevel)) + 6.5, 0)
+        } else if type == .caveLands {
+            let spawnGround = surfaceHeightAt(x: 0, z: 0)
+            playerPosition = SCNVector3(0, Float(max(spawnGround, 4)) + 2.0, 0)
+        } else if type == .oceanWorld {
+            let spawnGround = surfaceHeightAt(x: 0, z: 0)
+            playerPosition = SCNVector3(0, Float(max(spawnGround, 11)) + 2.0, 0)
+        } else if type == .seaIslands {
+            let spawnGround = surfaceHeightAt(x: 0, z: 0)
+            playerPosition = SCNVector3(0, Float(max(spawnGround, 6)) + 2.5, 0)
         } else {
             let spawnGround = surfaceHeightAt(x: 0, z: 10)
             playerPosition = SCNVector3(0, Float(max(spawnGround, seaLevel)) + 6.5, 10)
@@ -1532,6 +1553,48 @@ final class VoxelWorld: NSObject, ObservableObject {
             let dunes = primaryNoise.fbm(x: wx * 0.018, y: wz * 0.018, octaves: 4, persistence: 0.5, lacunarity: 2.0)
             let raw = 6.0 + dunes * 9.0
             return max(1, min(16, Int(round(raw))))
+
+        case .caveLands:
+            let fx = Float(x)
+            let fz = Float(z)
+            let warpScale: Float = 0.02
+            let wx = fx + warpNoise.noise(fx * warpScale, fz * warpScale) * 10.0
+            let wz = fz + warpNoise.noise((fx + 43.0) * warpScale, (fz - 31.0) * warpScale) * 10.0
+            let rawFloor = 4.5 + primaryNoise.fbm(x: wx * 0.025, y: wz * 0.025, octaves: 3) * 3.5
+            return max(3, min(10, Int(round(rawFloor))))
+
+        case .oceanWorld:
+            let fx = Float(x)
+            let fz = Float(z)
+            let dist = sqrt(fx * fx + fz * fz)
+            if dist < 10.0 {
+                return 11 // starting sandbar above ocean water level (10)
+            }
+            let seabed = 3.0 + primaryNoise.fbm(x: fx * 0.02, y: fz * 0.02, octaves: 3) * 3.0
+            let stackNoise = ridgeNoise.noise(fx * 0.045, fz * 0.045)
+            if stackNoise > 0.65 {
+                return max(11, min(15, Int(11.0 + (stackNoise - 0.65) * 16.0)))
+            }
+            return max(2, min(7, Int(round(seabed))))
+
+        case .seaIslands:
+            let fx = Float(x)
+            let fz = Float(z)
+            let dist = sqrt(fx * fx + fz * fz)
+            let isSpawnIsland = (dist < 22.0)
+            let warpScale: Float = 0.02
+            let wx = fx + warpNoise.noise(fx * warpScale, fz * warpScale) * 14.0
+            let wz = fz + warpNoise.noise((fx + 61.0) * warpScale, (fz - 41.0) * warpScale) * 14.0
+            let islandNoise = primaryNoise.fbm(x: wx * 0.035, y: wz * 0.035, octaves: 4)
+
+            if isSpawnIsland || islandNoise > -0.05 {
+                let hill = max(0.0, islandNoise + 0.05)
+                let height = 6.0 + hill * 18.0
+                return max(6, min(18, Int(round(height))))
+            } else {
+                let seabed = 2.0 + primaryNoise.fbm(x: wx * 0.02, y: wz * 0.02, octaves: 2) * 2.0
+                return max(1, min(5, Int(round(seabed))))
+            }
 
         case .standard:
             let fx = Float(x)
@@ -1726,6 +1789,156 @@ final class VoxelWorld: NSObject, ObservableObject {
                     }
                 }
             }
+        } else if currentWorldType == .caveLands {
+            for x in minX..<maxX {
+                heights[x] = [:]
+                for z in minZ..<maxZ {
+                    let floorH = surfaceHeightAt(x: x, z: z)
+                    heights[x]?[z] = floorH
+
+                    // Bedrock floor at y=0
+                    localBlocks[BlockCoord(x: x, y: 0, z: z)] = .stone
+
+                    // Undulating cavern floor
+                    for y in 1...floorH {
+                        let c = BlockCoord(x: x, y: y, z: z)
+                        if y == floorH {
+                            if floorH <= 4 {
+                                localBlocks[c] = .stone
+                            } else {
+                                localBlocks[c] = (y % 3 == 0) ? .grass : .smoothStone
+                            }
+                        } else if y >= floorH - 2 && floorH > 4 {
+                            localBlocks[c] = .dirt
+                        } else {
+                            localBlocks[c] = .smoothStone
+                        }
+                    }
+
+                    // Water pools in low cavern basins
+                    if floorH <= 4 {
+                        for y in (floorH + 1)...4 {
+                            let wCoord = BlockCoord(x: x, y: y, z: z)
+                            localBlocks[wCoord] = .water
+                            waterSourceBlocks.insert(wCoord)
+                        }
+                    }
+
+                    // Cavern ceiling at y=27...29, impenetrable bedrock roof at y=31
+                    let ceilNoise = ridgeNoise.noise(Float(x) * 0.04, Float(z) * 0.04)
+                    let ceilBot = max(26, min(29, Int(28.0 + ceilNoise * 2.0)))
+                    for y in ceilBot...31 {
+                        let c = BlockCoord(x: x, y: y, z: z)
+                        localBlocks[c] = (y == 31) ? .stone : .smoothStone
+                    }
+
+                    // Stalagmites (rising from floor), Stalactites (hanging from ceiling), and Giant Pillars
+                    let colNoise = ridgeNoise.noise(Float(x) * 0.075, Float(z) * 0.075)
+                    if colNoise > 0.55 {
+                        // Full Cavern Pillar connecting floor to ceiling
+                        for y in (floorH + 1)..<ceilBot {
+                            localBlocks[BlockCoord(x: x, y: y, z: z)] = (y % 2 == 0) ? .smoothStone : .stone
+                        }
+                    } else if colNoise > 0.32 {
+                        // Stalagmite rising from floor
+                        let tipY = min(ceilBot - 3, floorH + Int(round((colNoise - 0.32) * 16.0)))
+                        if tipY > floorH {
+                            for y in (floorH + 1)...tipY {
+                                localBlocks[BlockCoord(x: x, y: y, z: z)] = .stone
+                            }
+                        }
+                    } else if colNoise < -0.32 {
+                        // Stalactite hanging from ceiling
+                        let tipY = max(floorH + 3, ceilBot - Int(round(abs(colNoise + 0.32) * 16.0)))
+                        if tipY < ceilBot {
+                            for y in tipY..<ceilBot {
+                                localBlocks[BlockCoord(x: x, y: y, z: z)] = .stone
+                            }
+                        }
+                    }
+                }
+            }
+        } else if currentWorldType == .oceanWorld {
+            let oceanWaterLevel = 10
+            for x in minX..<maxX {
+                heights[x] = [:]
+                for z in minZ..<maxZ {
+                    let h = surfaceHeightAt(x: x, z: z)
+                    heights[x]?[z] = h
+
+                    // Bedrock floor at y=0
+                    localBlocks[BlockCoord(x: x, y: 0, z: z)] = .stone
+
+                    // Seabed strata
+                    for y in 1...h {
+                        let c = BlockCoord(x: x, y: y, z: z)
+                        if y == h {
+                            localBlocks[c] = (h >= oceanWaterLevel) ? .sand : ((y % 2 == 0) ? .sand : .dirt)
+                        } else if y >= h - 2 {
+                            localBlocks[c] = .dirt
+                        } else {
+                            localBlocks[c] = .smoothStone
+                        }
+                    }
+
+                    // Deep ocean water filling up to oceanWaterLevel
+                    if h < oceanWaterLevel {
+                        for y in (h + 1)...oceanWaterLevel {
+                            let wCoord = BlockCoord(x: x, y: y, z: z)
+                            localBlocks[wCoord] = .water
+                            waterSourceBlocks.insert(wCoord)
+                        }
+                    }
+
+                    // Starting wooden spawn platform at (0, 0)
+                    if abs(x) <= 2 && abs(z) <= 2 {
+                        let platY = oceanWaterLevel + 1
+                        localBlocks[BlockCoord(x: x, y: platY, z: z)] = .woodPlanks
+                        if abs(x) == 2 && abs(z) == 2 {
+                            for py in (oceanWaterLevel - 2)...(platY + 1) {
+                                localBlocks[BlockCoord(x: x, y: py, z: z)] = .woodLog
+                            }
+                        }
+                    }
+                }
+            }
+        } else if currentWorldType == .seaIslands {
+            let islandWaterLevel = 6
+            for x in minX..<maxX {
+                heights[x] = [:]
+                for z in minZ..<maxZ {
+                    let h = surfaceHeightAt(x: x, z: z)
+                    heights[x]?[z] = h
+
+                    // Bedrock at y=0
+                    localBlocks[BlockCoord(x: x, y: 0, z: z)] = .stone
+
+                    // Island & Seabed strata
+                    for y in 1...h {
+                        let c = BlockCoord(x: x, y: y, z: z)
+                        if y == h {
+                            if h <= islandWaterLevel + 1 {
+                                localBlocks[c] = .sand // Sandy beach
+                            } else {
+                                localBlocks[c] = .grass // Lush grassy hill
+                            }
+                        } else if y >= h - 2 {
+                            localBlocks[c] = (h <= islandWaterLevel + 1) ? .sand : .dirt
+                        } else {
+                            localBlocks[c] = .smoothStone
+                        }
+                    }
+
+                    // Ocean water around islands
+                    if h < islandWaterLevel {
+                        for y in (h + 1)...islandWaterLevel {
+                            let wCoord = BlockCoord(x: x, y: y, z: z)
+                            localBlocks[wCoord] = .water
+                            waterSourceBlocks.insert(wCoord)
+                        }
+                    }
+                }
+            }
         } else {
             for x in minX..<maxX {
                 heights[x] = [:]
@@ -1782,8 +1995,8 @@ final class VoxelWorld: NSObject, ObservableObject {
                         }
                     } else {
                         // Wooden Cabin with Glass Windows, Door & Pitched Roof
-                        let wallBlock: BlockType = (currentWorldType == .desert) ? .smoothStone : .woodPlanks
-                        let cornerPost: BlockType = (currentWorldType == .desert) ? .smoothStone : .woodLog
+                        let wallBlock: BlockType = (currentWorldType == .desert || currentWorldType == .caveLands) ? .smoothStone : .woodPlanks
+                        let cornerPost: BlockType = (currentWorldType == .desert) ? .smoothStone : ((currentWorldType == .caveLands) ? .stone : .woodLog)
 
                         for dx in -2...2 {
                             for dz in -2...2 {
@@ -1927,7 +2140,90 @@ final class VoxelWorld: NSObject, ObservableObject {
                     }
                 }
             }
-        } else if currentWorldType != .flat {
+        } else if currentWorldType == .seaIslands {
+            // Sea Islands: Tropical Palm Trees along beaches & Lush Island Oaks on hills
+            let treeMinX = startX + 2
+            let treeMaxX = endX - 2
+            let treeMinZ = startZ + 2
+            let treeMaxZ = endZ - 2
+            for x in treeMinX..<treeMaxX {
+                for z in treeMinZ..<treeMaxZ {
+                    guard let h = heights[x]?[z], h >= 6 && h < 18 else { continue }
+                    if localBlocks[BlockCoord(x: x, y: h + 1, z: z)] != nil { continue }
+
+                    let colHash = abs((x &* 73856093) ^ (z &* 19349663) ^ (worldSeed &* 83492791)) % 100
+                    if h <= 8 {
+                        // Palm Tree on sandy beach / coast
+                        if colHash < 12 && (x % 3 == 0) && (z % 3 == 0) {
+                            let trunkH = 5
+                            for ty in (h + 1)...(h + trunkH) {
+                                localBlocks[BlockCoord(x: x, y: ty, z: z)] = .woodLog
+                            }
+                            let topY = h + trunkH
+                            for lx in (x - 2)...(x + 2) {
+                                for lz in (z - 2)...(z + 2) {
+                                    if abs(lx - x) <= 1 || abs(lz - z) <= 1 {
+                                        localBlocks[BlockCoord(x: lx, y: topY, z: lz)] = .leaves
+                                    }
+                                }
+                            }
+                            localBlocks[BlockCoord(x: x, y: topY + 1, z: z)] = .leaves
+                        }
+                    } else {
+                        // Lush Tropical Oak Tree on island hills
+                        if colHash < 10 && (x % 3 == 0) && (z % 3 == 0) {
+                            let treeH = 4 + (colHash % 2)
+                            let topY = h + treeH
+                            for ly in (topY - 1)...(topY + 1) {
+                                let rad = (ly == topY + 1) ? 1 : 2
+                                for lx in (x - rad)...(x + rad) {
+                                    for lz in (z - rad)...(z + rad) {
+                                        if rad == 2 && abs(lx - x) == 2 && abs(lz - z) == 2 { continue }
+                                        let leafCoord = BlockCoord(x: lx, y: ly, z: lz)
+                                        if localBlocks[leafCoord] == nil {
+                                            localBlocks[leafCoord] = .leaves
+                                        }
+                                    }
+                                }
+                            }
+                            for ty in (h + 1)...topY {
+                                localBlocks[BlockCoord(x: x, y: ty, z: z)] = .woodLog
+                            }
+                        }
+                    }
+                }
+            }
+        } else if currentWorldType == .caveLands {
+            // Cave Lands: Subterranean Fungal Tree Columns
+            let treeMinX = startX + 2
+            let treeMaxX = endX - 2
+            let treeMinZ = startZ + 2
+            let treeMaxZ = endZ - 2
+            for x in treeMinX..<treeMaxX {
+                for z in treeMinZ..<treeMaxZ {
+                    guard let h = heights[x]?[z], h >= 5 && h <= 9 else { continue }
+                    if localBlocks[BlockCoord(x: x, y: h + 1, z: z)] != nil { continue }
+
+                    let colHash = abs((x &* 73856093) ^ (z &* 19349663) ^ (worldSeed &* 83492791)) % 100
+                    if colHash < 7 && (x % 4 == 0) && (z % 4 == 0) {
+                        let trunkH = 4
+                        for ty in (h + 1)...(h + trunkH) {
+                            localBlocks[BlockCoord(x: x, y: ty, z: z)] = .woodLog
+                        }
+                        let topY = h + trunkH
+                        for lx in (x - 1)...(x + 1) {
+                            for lz in (z - 1)...(z + 1) {
+                                let leafCoord = BlockCoord(x: lx, y: topY, z: lz)
+                                if localBlocks[leafCoord] == nil {
+                                    localBlocks[leafCoord] = .leaves
+                                }
+                            }
+                        }
+                        localBlocks[BlockCoord(x: x, y: topY + 1, z: z)] = .leaves
+                    }
+                }
+            }
+        } else if currentWorldType != .flat && currentWorldType != .oceanWorld {
             // Standard & Amplified Peaks Trees
             let maxTreeElevation = (currentWorldType == .amplified) ? 24 : 14
             let treeMinX = startX + 2
@@ -3375,7 +3671,7 @@ final class VoxelWorld: NSObject, ObservableObject {
                 if currentWorldType == .skyIslands {
                     playerPosition.y = min(60.0, newY)
                 } else {
-                    let maxY: Float = (currentWorldType == .amplified) ? 50.0 : 42.0
+                    let maxY: Float = (currentWorldType == .caveLands) ? 26.5 : ((currentWorldType == .amplified) ? 50.0 : 42.0)
                     playerPosition.y = max(0.5 + playerFeetOffset, min(maxY, newY))
                 }
                 updateCameraTransform()
@@ -3481,7 +3777,7 @@ final class VoxelWorld: NSObject, ObservableObject {
             }
         } else {
             // Infinite world: No horizontal clamping on X and Z!
-            let maxY: Float = (currentWorldType == .amplified) ? 50.0 : 42.0
+            let maxY: Float = (currentWorldType == .caveLands) ? 26.5 : ((currentWorldType == .amplified) ? 50.0 : 42.0)
             pos.y = max(0.5 + playerFeetOffset, min(maxY, pos.y))
         }
 
