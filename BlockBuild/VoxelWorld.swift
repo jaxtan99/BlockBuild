@@ -506,7 +506,7 @@ struct ControlLayoutConfig: Codable, Equatable {
 
 // MARK: - Player Character Skins (Multiplayer & Avatar Customization)
 
-enum SkinFeatureStyle {
+enum SkinFeatureStyle: String, Codable, CaseIterable {
     case classic
     case visor
     case cybernetic
@@ -1036,6 +1036,12 @@ final class VoxelWorld: NSObject, ObservableObject {
     @Published var selectedSkin: PlayerSkin = .steve
     @Published var currentTexturePack: TexturePack = .classic
 
+    // AI Game Studio State
+    @Published var customWorldTypes: [CustomWorldType] = []
+    @Published var activeCustomWorld: CustomWorldType? = nil
+    @Published var customSkins: [CustomSkin] = []
+    @Published var activeCustomSkin: CustomSkin? = nil
+
     // Local Multiplayer State (Enabled by default, continuously signals nearby players)
     @Published var isMultiplayerEnabled: Bool = true {
         didSet {
@@ -1171,6 +1177,8 @@ final class VoxelWorld: NSObject, ObservableObject {
             self.renderDistance = 4
         }
         loadControlLayout()
+        loadCustomWorldTypes()
+        loadCustomSkins()
         setupGeometries()
         setupScene()
         loadSavedWorldsList()
@@ -1449,12 +1457,133 @@ final class VoxelWorld: NSObject, ObservableObject {
 
     func setSkin(_ skin: PlayerSkin) {
         selectedSkin = skin
+        activeCustomSkin = nil
         UserDefaults.standard.set(skin.rawValue, forKey: "blockbuild_selected_skin")
+        UserDefaults.standard.removeObject(forKey: "blockbuild_active_custom_skin_id")
         broadcastPlayerPoseIfNeeded()
         if isInGame {
             startMultiplayerServices()
         }
         statusToast = "Skin: \(skin.displayName)"
+    }
+
+    // MARK: - AI Game Studio Helpers
+
+    func loadCustomWorldTypes() {
+        if let data = UserDefaults.standard.data(forKey: "blockbuild_custom_world_types"),
+           let decoded = try? JSONDecoder().decode([CustomWorldType].self, from: data) {
+            self.customWorldTypes = decoded
+        }
+    }
+
+    func saveCustomWorldType(_ type: CustomWorldType) {
+        if let idx = customWorldTypes.firstIndex(where: { $0.id == type.id }) {
+            customWorldTypes[idx] = type
+        } else {
+            customWorldTypes.insert(type, at: 0)
+        }
+        persistCustomWorldTypes()
+        statusToast = "Saved world type '\(type.name)'"
+    }
+
+    func deleteCustomWorldType(id: UUID) {
+        customWorldTypes.removeAll(where: { $0.id == id })
+        if activeCustomWorld?.id == id {
+            activeCustomWorld = nil
+        }
+        persistCustomWorldTypes()
+    }
+
+    private func persistCustomWorldTypes() {
+        if let encoded = try? JSONEncoder().encode(customWorldTypes) {
+            UserDefaults.standard.set(encoded, forKey: "blockbuild_custom_world_types")
+        }
+    }
+
+    func loadCustomSkins() {
+        if let data = UserDefaults.standard.data(forKey: "blockbuild_custom_skins"),
+           let decoded = try? JSONDecoder().decode([CustomSkin].self, from: data) {
+            self.customSkins = decoded
+        }
+        if let activeID = UserDefaults.standard.string(forKey: "blockbuild_active_custom_skin_id"),
+           let uuid = UUID(uuidString: activeID),
+           let skin = customSkins.first(where: { $0.id == uuid }) {
+            self.activeCustomSkin = skin
+        }
+    }
+
+    func saveCustomSkin(_ skin: CustomSkin) {
+        if let idx = customSkins.firstIndex(where: { $0.id == skin.id }) {
+            customSkins[idx] = skin
+        } else {
+            customSkins.insert(skin, at: 0)
+        }
+        persistCustomSkins()
+        statusToast = "Saved skin '\(skin.name)'"
+    }
+
+    func deleteCustomSkin(id: UUID) {
+        customSkins.removeAll(where: { $0.id == id })
+        if activeCustomSkin?.id == id {
+            activeCustomSkin = nil
+            UserDefaults.standard.removeObject(forKey: "blockbuild_active_custom_skin_id")
+        }
+        persistCustomSkins()
+    }
+
+    func equipCustomSkin(_ skin: CustomSkin) {
+        activeCustomSkin = skin
+        UserDefaults.standard.set(skin.id.uuidString, forKey: "blockbuild_active_custom_skin_id")
+        broadcastPlayerPoseIfNeeded()
+        statusToast = "Equipped skin '\(skin.name)'"
+    }
+
+    func clearActiveCustomSkin() {
+        activeCustomSkin = nil
+        UserDefaults.standard.removeObject(forKey: "blockbuild_active_custom_skin_id")
+        broadcastPlayerPoseIfNeeded()
+    }
+
+    private func persistCustomSkins() {
+        if let encoded = try? JSONEncoder().encode(customSkins) {
+            UserDefaults.standard.set(encoded, forKey: "blockbuild_custom_skins")
+        }
+    }
+
+    func regenerateWithCustomWorld(_ custom: CustomWorldType, customName: String? = nil) {
+        saveCurrentWorld(silent: true)
+        activeCustomWorld = custom
+        let newSeed = Int.random(in: 1000...999_999)
+        startNewWorld(seed: newSeed, type: custom.baseWorldType, customName: customName ?? custom.name)
+        applyAtmosphere()
+        saveCurrentWorld(silent: true)
+        isInGame = true
+        startMultiplayerServices()
+        broadcastWorldSnapshotToPeers()
+    }
+
+    func applyAtmosphere() {
+        if let custom = activeCustomWorld {
+            scene.background.contents = UIColor(red: CGFloat(custom.skyRed), green: CGFloat(custom.skyGreen), blue: CGFloat(custom.skyBlue), alpha: 1.0)
+            scene.fogColor = UIColor(red: CGFloat(custom.fogRed), green: CGFloat(custom.fogGreen), blue: CGFloat(custom.fogBlue), alpha: 1.0)
+            scene.fogStartDistance = 15.0
+            scene.fogEndDistance = CGFloat(Float(renderDistance * chunkSize) * 1.4)
+        } else if currentWorldType == .caveLands {
+            scene.background.contents = UIColor(red: 0.06, green: 0.08, blue: 0.12, alpha: 1.0)
+            scene.fogColor = UIColor(red: 0.08, green: 0.10, blue: 0.15, alpha: 1.0)
+            scene.fogStartDistance = 8.0
+            scene.fogEndDistance = 28.0
+        } else if currentWorldType == .desert {
+            scene.background.contents = UIColor(red: 0.82, green: 0.78, blue: 0.65, alpha: 1.0)
+            scene.fogColor = UIColor(red: 0.88, green: 0.82, blue: 0.70, alpha: 1.0)
+            scene.fogStartDistance = 0.0
+            scene.fogEndDistance = 0.0
+        } else {
+            scene.background.contents = UIColor(red: 0.60, green: 0.80, blue: 1.0, alpha: 1.0)
+            scene.fogColor = UIColor(red: 0.65, green: 0.83, blue: 1.0, alpha: 1.0)
+            scene.fogStartDistance = 0.0
+            scene.fogEndDistance = 0.0
+        }
     }
 
     func setTexturePack(_ pack: TexturePack) {
@@ -1493,6 +1622,7 @@ final class VoxelWorld: NSObject, ObservableObject {
     func regenerateNewWorld(type: WorldType = .standard, customName: String? = nil) {
         // Save the current world before generating a new one so no progress is lost
         saveCurrentWorld(silent: true)
+        activeCustomWorld = nil
         let newSeed = Int.random(in: 1000...999_999)
         startNewWorld(seed: newSeed, type: type, customName: customName)
         saveCurrentWorld(silent: true)
@@ -1510,9 +1640,10 @@ final class VoxelWorld: NSObject, ObservableObject {
         currentArchetype = WorldArchetype(rawValue: abs(seed) % WorldArchetype.allCases.count) ?? .alphaCliffs
 
         let trimmed = customName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        currentWorldName = trimmed.isEmpty ? "\(type.displayName) #\(seed % 1000)" : trimmed
+        currentWorldName = trimmed.isEmpty ? "\(activeCustomWorld?.name ?? type.displayName) #\(seed % 1000)" : trimmed
 
         configureNoiseGenerators(seed: seed)
+        applyAtmosphere()
 
         if type == .skyIslands {
             let spawnGround = surfaceHeightAt(x: 0, z: 0)
@@ -1555,6 +1686,37 @@ final class VoxelWorld: NSObject, ObservableObject {
     }
 
     private func surfaceHeightAt(x: Int, z: Int) -> Int {
+        if let custom = activeCustomWorld {
+            let fx = Float(x)
+            let fz = Float(z)
+            if custom.isFloatingIslands {
+                let dist = sqrt(fx * fx + fz * fz)
+                if dist < 26.0 { return Int(custom.baseHeight) }
+                let wx = fx + warpNoise.noise(fx * custom.warpScale, fz * custom.warpScale) * 16.0
+                let wz = fz + warpNoise.noise((fx + 97.0) * custom.warpScale, (fz - 53.0) * custom.warpScale) * 16.0
+                let islandNoise = primaryNoise.fbm(x: wx * custom.noiseFrequency, y: wz * custom.noiseFrequency, octaves: 3)
+                if islandNoise > -0.10 {
+                    let ridge = ridgeNoise.noise(wx * 0.04, wz * 0.04)
+                    return max(16, min(28, Int(custom.baseHeight + ridge * custom.heightVariance)))
+                }
+                return -100 // void
+            } else if custom.isSubterranean {
+                let wx = fx + warpNoise.noise(fx * custom.warpScale, fz * custom.warpScale) * 10.0
+                let wz = fz + warpNoise.noise((fx + 43.0) * custom.warpScale, (fz - 31.0) * custom.warpScale) * 10.0
+                let rawFloor = custom.baseHeight + primaryNoise.fbm(x: wx * custom.noiseFrequency, y: wz * custom.noiseFrequency, octaves: 3) * custom.heightVariance
+                return max(3, min(10, Int(round(rawFloor))))
+            } else if custom.baseWorldType == .flat || custom.heightVariance <= 0.01 {
+                return Int(custom.baseHeight)
+            } else {
+                let wx = fx + warpNoise.noise(fx * custom.warpScale, fz * custom.warpScale) * 16.0
+                let wz = fz + warpNoise.noise((fx + 77.0) * custom.warpScale, (fz - 43.0) * custom.warpScale) * 16.0
+                let base = primaryNoise.fbm(x: wx * custom.noiseFrequency, y: wz * custom.noiseFrequency, octaves: 4, persistence: 0.55, lacunarity: 2.1)
+                let ridge = 1.0 - abs(ridgeNoise.noise(wx * 0.035, wz * 0.035))
+                let raw = custom.baseHeight + base * custom.heightVariance + (ridge * 4.0)
+                return max(1, min(36, Int(round(raw))))
+            }
+        }
+
         switch currentWorldType {
         case .flat:
             return 4
@@ -1683,6 +1845,143 @@ final class VoxelWorld: NSObject, ObservableObject {
         }
     }
 
+    private func generateCustomChunkData(
+        chunk: ChunkCoord,
+        minX: Int,
+        maxX: Int,
+        minZ: Int,
+        maxZ: Int,
+        custom: CustomWorldType,
+        localBlocks: inout [BlockCoord: BlockType],
+        heights: inout [Int: [Int: Int]],
+        waterSourceBlocks: inout Set<BlockCoord>
+    ) {
+        if custom.isFloatingIslands {
+            let warpScale = custom.warpScale
+            for x in minX..<maxX {
+                heights[x] = [:]
+                for z in minZ..<maxZ {
+                    let fx = Float(x)
+                    let fz = Float(z)
+                    let dist = sqrt(fx * fx + fz * fz)
+                    let isSpawnIsland = (dist < 26.0)
+
+                    let wx = fx + warpNoise.noise(fx * warpScale, fz * warpScale) * 16.0
+                    let wz = fz + warpNoise.noise((fx + 97.0) * warpScale, (fz - 53.0) * warpScale) * 16.0
+                    let islandNoise = primaryNoise.fbm(x: wx * custom.noiseFrequency, y: wz * custom.noiseFrequency, octaves: 3)
+
+                    if isSpawnIsland || islandNoise > -0.10 {
+                        let topY = isSpawnIsland ? Int(custom.baseHeight) : max(16, min(28, Int(custom.baseHeight + ridgeNoise.noise(wx * 0.04, wz * 0.04) * custom.heightVariance)))
+                        let thickness = isSpawnIsland ? 7 : max(3, Int(4.0 + (islandNoise + 0.10) * 8.0))
+                        let botY = max(8, topY - thickness)
+                        heights[x]?[z] = topY
+
+                        for y in botY...topY {
+                            let c = BlockCoord(x: x, y: y, z: z)
+                            if y == topY {
+                                localBlocks[c] = custom.surfaceBlock
+                            } else if y >= topY - 2 {
+                                localBlocks[c] = custom.subsurfaceBlock
+                            } else {
+                                localBlocks[c] = custom.deepBlock
+                            }
+                        }
+                    } else {
+                        heights[x]?[z] = -100 // void
+                    }
+                }
+            }
+        } else if custom.isSubterranean {
+            let ceilingY = 30
+            for x in minX..<maxX {
+                heights[x] = [:]
+                for z in minZ..<maxZ {
+                    let floorH = surfaceHeightAt(x: x, z: z)
+                    heights[x]?[z] = floorH
+
+                    for y in 0...floorH {
+                        let c = BlockCoord(x: x, y: y, z: z)
+                        localBlocks[c] = (y == floorH) ? custom.surfaceBlock : (y >= floorH - 2 ? custom.subsurfaceBlock : custom.deepBlock)
+                    }
+
+                    // Vault ceiling
+                    for y in ceilingY...33 {
+                        localBlocks[BlockCoord(x: x, y: y, z: z)] = custom.deepBlock
+                    }
+                }
+            }
+        } else if custom.baseWorldType == .flat || custom.heightVariance <= 0.01 {
+            let flatH = max(1, Int(custom.baseHeight))
+            for x in minX..<maxX {
+                heights[x] = [:]
+                for z in minZ..<maxZ {
+                    heights[x]?[z] = flatH
+                    for y in 0...flatH {
+                        let c = BlockCoord(x: x, y: y, z: z)
+                        localBlocks[c] = (y == flatH) ? custom.surfaceBlock : (y >= flatH - 2 ? custom.subsurfaceBlock : custom.deepBlock)
+                    }
+                }
+            }
+        } else {
+            for x in minX..<maxX {
+                heights[x] = [:]
+                for z in minZ..<maxZ {
+                    let h = surfaceHeightAt(x: x, z: z)
+                    heights[x]?[z] = h
+
+                    for y in 0...h {
+                        let c = BlockCoord(x: x, y: y, z: z)
+                        if y == h {
+                            localBlocks[c] = custom.surfaceBlock
+                        } else if y >= h - 2 {
+                            localBlocks[c] = custom.subsurfaceBlock
+                        } else {
+                            localBlocks[c] = custom.deepBlock
+                        }
+                    }
+
+                    if custom.waterLevel >= 0 && h < custom.waterLevel {
+                        for y in (h + 1)...custom.waterLevel {
+                            let wCoord = BlockCoord(x: x, y: y, z: z)
+                            localBlocks[wCoord] = .water
+                            waterSourceBlocks.insert(wCoord)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Custom World Flora / Trees
+        if custom.hasTrees && custom.treeStyle != "none" {
+            let treeMinX = minX + 2
+            let treeMaxX = maxX - 2
+            let treeMinZ = minZ + 2
+            let treeMaxZ = maxZ - 2
+            for x in treeMinX..<treeMaxX {
+                for z in treeMinZ..<treeMaxZ {
+                    guard let h = heights[x]?[z], h > 0 && h < 30 else { continue }
+                    if localBlocks[BlockCoord(x: x, y: h + 1, z: z)] != nil { continue }
+                    let colHash = abs((x &* 73856093) ^ (z &* 19349663) ^ (worldSeed &* 83492791)) % 100
+                    if colHash < 10 && (x % 3 == 0) && (z % 3 == 0) {
+                        let trunkH = custom.treeStyle == "palm" ? 5 : 4
+                        for ty in (h + 1)...(h + trunkH) {
+                            localBlocks[BlockCoord(x: x, y: ty, z: z)] = .woodLog
+                        }
+                        let topY = h + trunkH
+                        for lx in (x - 2)...(x + 2) {
+                            for lz in (z - 2)...(z + 2) {
+                                if abs(lx - x) <= 1 || abs(lz - z) <= 1 {
+                                    localBlocks[BlockCoord(x: lx, y: topY, z: lz)] = .leaves
+                                }
+                            }
+                        }
+                        localBlocks[BlockCoord(x: x, y: topY + 1, z: z)] = .leaves
+                    }
+                }
+            }
+        }
+    }
+
     private func generateChunkIfNeeded(_ chunk: ChunkCoord) {
         guard !generatedChunks.contains(chunk) else { return }
         generatedChunks.insert(chunk)
@@ -1700,7 +1999,9 @@ final class VoxelWorld: NSObject, ObservableObject {
         let minZ = startZ
         let maxZ = endZ
 
-        if currentWorldType == .flat {
+        if let custom = activeCustomWorld {
+            generateCustomChunkData(chunk: chunk, minX: minX, maxX: maxX, minZ: minZ, maxZ: maxZ, custom: custom, localBlocks: &localBlocks, heights: &heights, waterSourceBlocks: &waterSourceBlocks)
+        } else if currentWorldType == .flat {
             for x in minX..<maxX {
                 heights[x] = [:]
                 for z in minZ..<maxZ {
@@ -2017,8 +2318,8 @@ final class VoxelWorld: NSObject, ObservableObject {
             }
         }
 
-        // 3. Deterministic Wooden Plank Structures (with Windows, Doors & Roofs!) - skipped on Flat World
-        if currentWorldType != .flat {
+        // 3. Deterministic Wooden Plank Structures (with Windows, Doors & Roofs!) - skipped on Flat & Custom Worlds
+        if activeCustomWorld == nil && currentWorldType != .flat {
             let chunkHash = abs((chunk.cx &* 73856093) ^ (chunk.cz &* 19349663) ^ (worldSeed &* 83492791)) % 100
             if (chunk.cx == 0 && chunk.cz == 0) || chunkHash < 14 {
                 let midX = startX + chunkSize / 2
@@ -2123,6 +2424,7 @@ final class VoxelWorld: NSObject, ObservableObject {
         }
 
         // 4. Deterministic Trees (Tailored by World Type)
+        if activeCustomWorld == nil {
         if currentWorldType == .desert {
             // Desert: Oasis Palm Trees & Desert Shrubs
             let treeMinX = startX + 2
@@ -2304,6 +2606,7 @@ final class VoxelWorld: NSObject, ObservableObject {
                     }
                 }
             }
+        }
         }
 
         // Apply any player/water delta modifications that belong to this chunk
@@ -2811,7 +3114,7 @@ final class VoxelWorld: NSObject, ObservableObject {
         let worldID = currentWorldID
         let worldName = currentWorldName
         let seed = worldSeed
-        let archetypeTitle = currentWorldType.displayName
+        let archetypeTitle = activeCustomWorld?.name ?? currentWorldType.displayName
         let pPos = playerPosition
         let pYaw = yaw
         let pPitch = pitch
@@ -2899,10 +3202,16 @@ final class VoxelWorld: NSObject, ObservableObject {
 
         currentWorldID = saved.id
         currentWorldName = Self.cleanWorldName(saved.name, seed: saved.seed)
-        worldSeed = saved.seed
-        currentWorldType = WorldType.from(archetypeName: saved.archetypeName)
+        if let customMatch = customWorldTypes.first(where: { $0.name == saved.archetypeName || $0.id.uuidString == saved.archetypeName }) {
+            activeCustomWorld = customMatch
+            currentWorldType = customMatch.baseWorldType
+        } else {
+            activeCustomWorld = nil
+            currentWorldType = WorldType.from(archetypeName: saved.archetypeName)
+        }
         currentArchetype = WorldArchetype(rawValue: abs(saved.seed) % WorldArchetype.allCases.count) ?? .alphaCliffs
         configureNoiseGenerators(seed: saved.seed)
+        applyAtmosphere()
 
         // 1. Restore full saved chunks (the whole world block-for-block) if present
         if let savedChunks = saved.savedChunks {
@@ -4480,7 +4789,7 @@ final class VoxelWorld: NSObject, ObservableObject {
         SCNTransaction.commit()
     }
 
-    private static func makeBlockyPlayerAvatarNode(name: String, skin: PlayerSkin) -> SCNNode {
+    private static func makeBlockyPlayerAvatarNode(name: String, skin: PlayerSkin, customSkin: CustomSkin? = nil) -> SCNNode {
         let root = SCNNode()
         let mgr = SkinTextureManager.shared
 
@@ -4491,40 +4800,40 @@ final class VoxelWorld: NSObject, ObservableObject {
 
         // 1. Legs (Left & Right standard Minecraft limbs)
         let leftLegGeo = SCNBox(width: 0.22, height: 0.65, length: 0.22, chamferRadius: 0.0)
-        leftLegGeo.materials = mgr.leftLegMaterials(for: skin)
+        leftLegGeo.materials = customSkin != nil ? mgr.leftLegMaterials(for: customSkin!) : mgr.leftLegMaterials(for: skin)
         let leftLegNode = SCNNode(geometry: leftLegGeo)
         leftLegNode.position = SCNVector3(-0.13, 0.325, 0)
         bodyNode.addChildNode(leftLegNode)
 
         let rightLegGeo = SCNBox(width: 0.22, height: 0.65, length: 0.22, chamferRadius: 0.0)
-        rightLegGeo.materials = mgr.rightLegMaterials(for: skin)
+        rightLegGeo.materials = customSkin != nil ? mgr.rightLegMaterials(for: customSkin!) : mgr.rightLegMaterials(for: skin)
         let rightLegNode = SCNNode(geometry: rightLegGeo)
         rightLegNode.position = SCNVector3(0.13, 0.325, 0)
         bodyNode.addChildNode(rightLegNode)
 
         // 2. Torso
         let torsoGeo = SCNBox(width: 0.50, height: 0.65, length: 0.25, chamferRadius: 0.0)
-        torsoGeo.materials = mgr.torsoMaterials(for: skin)
+        torsoGeo.materials = customSkin != nil ? mgr.torsoMaterials(for: customSkin!) : mgr.torsoMaterials(for: skin)
         let torsoNode = SCNNode(geometry: torsoGeo)
         torsoNode.position = SCNVector3(0, 0.975, 0)
         bodyNode.addChildNode(torsoNode)
 
         // 3. Arms (Left & Right)
         let leftArmGeo = SCNBox(width: 0.22, height: 0.65, length: 0.22, chamferRadius: 0.0)
-        leftArmGeo.materials = mgr.leftArmMaterials(for: skin)
+        leftArmGeo.materials = customSkin != nil ? mgr.leftArmMaterials(for: customSkin!) : mgr.leftArmMaterials(for: skin)
         let leftArmNode = SCNNode(geometry: leftArmGeo)
         leftArmNode.position = SCNVector3(-0.36, 0.975, 0)
         bodyNode.addChildNode(leftArmNode)
 
         let rightArmGeo = SCNBox(width: 0.22, height: 0.65, length: 0.22, chamferRadius: 0.0)
-        rightArmGeo.materials = mgr.rightArmMaterials(for: skin)
+        rightArmGeo.materials = customSkin != nil ? mgr.rightArmMaterials(for: customSkin!) : mgr.rightArmMaterials(for: skin)
         let rightArmNode = SCNNode(geometry: rightArmGeo)
         rightArmNode.position = SCNVector3(0.36, 0.975, 0)
         bodyNode.addChildNode(rightArmNode)
 
         // 4. Head
         let headGeo = SCNBox(width: 0.50, height: 0.50, length: 0.50, chamferRadius: 0.0)
-        headGeo.materials = mgr.headMaterials(for: skin)
+        headGeo.materials = customSkin != nil ? mgr.headMaterials(for: customSkin!) : mgr.headMaterials(for: skin)
         let headNode = SCNNode(geometry: headGeo)
         headNode.position = SCNVector3(0, 1.55, 0)
         bodyNode.addChildNode(headNode)
@@ -4749,6 +5058,139 @@ final class SkinTextureManager: @unchecked Sendable {
             skin.headColor.setFill()
             ctx.fill(CGRect(x: 0, y: 0, width: 64, height: 64))
         }
+    }
+
+    // MARK: - AI Custom Skin Support
+
+    private var customSkinImageCache: [UUID: UIImage] = [:]
+    private var customFrontAvatarCache: [UUID: UIImage] = [:]
+    private var customHeadMaterialsCache: [UUID: [SCNMaterial]] = [:]
+    private var customTorsoMaterialsCache: [UUID: [SCNMaterial]] = [:]
+    private var customRightArmMaterialsCache: [UUID: [SCNMaterial]] = [:]
+    private var customLeftArmMaterialsCache: [UUID: [SCNMaterial]] = [:]
+    private var customRightLegMaterialsCache: [UUID: [SCNMaterial]] = [:]
+    private var customLeftLegMaterialsCache: [UUID: [SCNMaterial]] = [:]
+
+    func skinImage(for customSkin: CustomSkin) -> UIImage {
+        if let cached = customSkinImageCache[customSkin.id] { return cached }
+        if let img = UIImage(data: customSkin.pngData) {
+            customSkinImageCache[customSkin.id] = img
+            return img
+        }
+        let fallback = generateSolidFallbackSkin(.steve)
+        customSkinImageCache[customSkin.id] = fallback
+        return fallback
+    }
+
+    func frontAvatarImage(for customSkin: CustomSkin) -> UIImage {
+        if let cached = customFrontAvatarCache[customSkin.id] { return cached }
+        let img = skinImage(for: customSkin)
+        guard let cg = img.cgImage else { return img }
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0
+        format.opaque = false
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 16, height: 32), format: format)
+        let result = renderer.image { _ in
+            cropFace(from: cg, x: 8, y: 8, w: 8, h: 8).draw(in: CGRect(x: 4, y: 0, width: 8, height: 8))
+            cropFace(from: cg, x: 44, y: 20, w: 4, h: 12).draw(in: CGRect(x: 0, y: 8, width: 4, height: 12))
+            cropFace(from: cg, x: 20, y: 20, w: 8, h: 12).draw(in: CGRect(x: 4, y: 8, width: 8, height: 12))
+            cropFace(from: cg, x: 36, y: 52, w: 4, h: 12).draw(in: CGRect(x: 12, y: 8, width: 4, height: 12))
+            cropFace(from: cg, x: 4, y: 20, w: 4, h: 12).draw(in: CGRect(x: 4, y: 20, width: 4, height: 12))
+            cropFace(from: cg, x: 20, y: 52, w: 4, h: 12).draw(in: CGRect(x: 8, y: 20, width: 4, height: 12))
+        }
+        customFrontAvatarCache[customSkin.id] = result
+        return result
+    }
+
+    func headMaterials(for customSkin: CustomSkin) -> [SCNMaterial] {
+        if let cached = customHeadMaterialsCache[customSkin.id] { return cached }
+        let img = skinImage(for: customSkin)
+        guard let cg = img.cgImage else { return [] }
+        let front = makePixelMat(from: cropFace(from: cg, x: 8, y: 8, w: 8, h: 8, fallbackColor: customSkin.headColor))
+        let right = makePixelMat(from: cropFace(from: cg, x: 0, y: 8, w: 8, h: 8, fallbackColor: customSkin.hairColor))
+        let back = makePixelMat(from: cropFace(from: cg, x: 24, y: 8, w: 8, h: 8, fallbackColor: customSkin.hairColor))
+        let left = makePixelMat(from: cropFace(from: cg, x: 16, y: 8, w: 8, h: 8, fallbackColor: customSkin.hairColor))
+        let top = makePixelMat(from: cropFace(from: cg, x: 8, y: 0, w: 8, h: 8, fallbackColor: customSkin.hairColor))
+        let bottom = makePixelMat(from: cropFace(from: cg, x: 16, y: 0, w: 8, h: 8, fallbackColor: customSkin.headColor))
+        let mats = [front, right, back, left, top, bottom]
+        customHeadMaterialsCache[customSkin.id] = mats
+        return mats
+    }
+
+    func torsoMaterials(for customSkin: CustomSkin) -> [SCNMaterial] {
+        if let cached = customTorsoMaterialsCache[customSkin.id] { return cached }
+        let img = skinImage(for: customSkin)
+        guard let cg = img.cgImage else { return [] }
+        let front = makePixelMat(from: cropFace(from: cg, x: 20, y: 20, w: 8, h: 12, fallbackColor: customSkin.torsoColor))
+        let right = makePixelMat(from: cropFace(from: cg, x: 16, y: 20, w: 4, h: 12, fallbackColor: customSkin.torsoColor))
+        let back = makePixelMat(from: cropFace(from: cg, x: 32, y: 20, w: 8, h: 12, fallbackColor: customSkin.torsoColor))
+        let left = makePixelMat(from: cropFace(from: cg, x: 28, y: 20, w: 4, h: 12, fallbackColor: customSkin.torsoColor))
+        let top = makePixelMat(from: cropFace(from: cg, x: 20, y: 16, w: 8, h: 4, fallbackColor: customSkin.torsoColor))
+        let bottom = makePixelMat(from: cropFace(from: cg, x: 28, y: 16, w: 8, h: 4, fallbackColor: customSkin.torsoColor))
+        let mats = [front, right, back, left, top, bottom]
+        customTorsoMaterialsCache[customSkin.id] = mats
+        return mats
+    }
+
+    func rightArmMaterials(for customSkin: CustomSkin) -> [SCNMaterial] {
+        if let cached = customRightArmMaterialsCache[customSkin.id] { return cached }
+        let img = skinImage(for: customSkin)
+        guard let cg = img.cgImage else { return [] }
+        let front = makePixelMat(from: cropFace(from: cg, x: 44, y: 20, w: 4, h: 12, fallbackColor: customSkin.torsoColor))
+        let right = makePixelMat(from: cropFace(from: cg, x: 40, y: 20, w: 4, h: 12, fallbackColor: customSkin.torsoColor))
+        let back = makePixelMat(from: cropFace(from: cg, x: 52, y: 20, w: 4, h: 12, fallbackColor: customSkin.torsoColor))
+        let left = makePixelMat(from: cropFace(from: cg, x: 48, y: 20, w: 4, h: 12, fallbackColor: customSkin.torsoColor))
+        let top = makePixelMat(from: cropFace(from: cg, x: 44, y: 16, w: 4, h: 4, fallbackColor: customSkin.torsoColor))
+        let bottom = makePixelMat(from: cropFace(from: cg, x: 48, y: 16, w: 4, h: 4, fallbackColor: customSkin.headColor))
+        let mats = [front, right, back, left, top, bottom]
+        customRightArmMaterialsCache[customSkin.id] = mats
+        return mats
+    }
+
+    func leftArmMaterials(for customSkin: CustomSkin) -> [SCNMaterial] {
+        if let cached = customLeftArmMaterialsCache[customSkin.id] { return cached }
+        let img = skinImage(for: customSkin)
+        guard let cg = img.cgImage else { return [] }
+        let front = makePixelMat(from: cropFace(from: cg, x: 36, y: 52, w: 4, h: 12, fallbackColor: customSkin.torsoColor))
+        let right = makePixelMat(from: cropFace(from: cg, x: 32, y: 52, w: 4, h: 12, fallbackColor: customSkin.torsoColor))
+        let back = makePixelMat(from: cropFace(from: cg, x: 44, y: 52, w: 4, h: 12, fallbackColor: customSkin.torsoColor))
+        let left = makePixelMat(from: cropFace(from: cg, x: 40, y: 52, w: 4, h: 12, fallbackColor: customSkin.torsoColor))
+        let top = makePixelMat(from: cropFace(from: cg, x: 36, y: 48, w: 4, h: 4, fallbackColor: customSkin.torsoColor))
+        let bottom = makePixelMat(from: cropFace(from: cg, x: 40, y: 48, w: 4, h: 4, fallbackColor: customSkin.headColor))
+        let mats = [front, right, back, left, top, bottom]
+        customLeftArmMaterialsCache[customSkin.id] = mats
+        return mats
+    }
+
+    func rightLegMaterials(for customSkin: CustomSkin) -> [SCNMaterial] {
+        if let cached = customRightLegMaterialsCache[customSkin.id] { return cached }
+        let img = skinImage(for: customSkin)
+        guard let cg = img.cgImage else { return [] }
+        let front = makePixelMat(from: cropFace(from: cg, x: 4, y: 20, w: 4, h: 12, fallbackColor: customSkin.legsColor))
+        let right = makePixelMat(from: cropFace(from: cg, x: 0, y: 20, w: 4, h: 12, fallbackColor: customSkin.legsColor))
+        let back = makePixelMat(from: cropFace(from: cg, x: 12, y: 20, w: 4, h: 12, fallbackColor: customSkin.legsColor))
+        let left = makePixelMat(from: cropFace(from: cg, x: 8, y: 20, w: 4, h: 12, fallbackColor: customSkin.legsColor))
+        let top = makePixelMat(from: cropFace(from: cg, x: 4, y: 16, w: 4, h: 4, fallbackColor: customSkin.legsColor))
+        let bottom = makePixelMat(from: cropFace(from: cg, x: 8, y: 16, w: 4, h: 4, fallbackColor: .black))
+        let mats = [front, right, back, left, top, bottom]
+        customRightLegMaterialsCache[customSkin.id] = mats
+        return mats
+    }
+
+    func leftLegMaterials(for customSkin: CustomSkin) -> [SCNMaterial] {
+        if let cached = customLeftLegMaterialsCache[customSkin.id] { return cached }
+        let img = skinImage(for: customSkin)
+        guard let cg = img.cgImage else { return [] }
+        let front = makePixelMat(from: cropFace(from: cg, x: 20, y: 52, w: 4, h: 12, fallbackColor: customSkin.legsColor))
+        let right = makePixelMat(from: cropFace(from: cg, x: 16, y: 52, w: 4, h: 12, fallbackColor: customSkin.legsColor))
+        let back = makePixelMat(from: cropFace(from: cg, x: 28, y: 52, w: 4, h: 12, fallbackColor: customSkin.legsColor))
+        let left = makePixelMat(from: cropFace(from: cg, x: 24, y: 52, w: 4, h: 12, fallbackColor: customSkin.legsColor))
+        let top = makePixelMat(from: cropFace(from: cg, x: 20, y: 48, w: 4, h: 4, fallbackColor: customSkin.legsColor))
+        let bottom = makePixelMat(from: cropFace(from: cg, x: 24, y: 48, w: 4, h: 4, fallbackColor: .black))
+        let mats = [front, right, back, left, top, bottom]
+        customLeftLegMaterialsCache[customSkin.id] = mats
+        return mats
     }
 }
 

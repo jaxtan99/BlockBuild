@@ -12,6 +12,7 @@
 		A10000030000000000000001 /* BlockType.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000030000000000000001 /* BlockType.swift */; };
 		A10000040000000000000001 /* VoxelWorld.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000040000000000000001 /* VoxelWorld.swift */; };
 		A10000070000000000000001 /* TexturePack.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000070000000000000001 /* TexturePack.swift */; };
+		A10000080000000000000001 /* AIGameStudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000080000000000000001 /* AIGameStudio.swift */; };
 		A10000050000000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000050000000000000001 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
@@ -22,6 +23,7 @@
 		A20000030000000000000001 /* BlockType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockType.swift; sourceTree = "<group>"; };
 		A20000040000000000000001 /* VoxelWorld.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoxelWorld.swift; sourceTree = "<group>"; };
 		A20000070000000000000001 /* TexturePack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TexturePack.swift; sourceTree = "<group>"; };
+		A20000080000000000000001 /* AIGameStudio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIGameStudio.swift; sourceTree = "<group>"; };
 		A20000050000000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A20000060000000000000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -53,6 +55,7 @@
 				A20000030000000000000001 /* BlockType.swift */,
 				A20000040000000000000001 /* VoxelWorld.swift */,
 				A20000070000000000000001 /* TexturePack.swift */,
+				A20000080000000000000001 /* AIGameStudio.swift */,
 				A20000050000000000000001 /* Assets.xcassets */,
 				A20000060000000000000001 /* Info.plist */,
 			);
@@ -141,6 +144,7 @@
 				A10000030000000000000001 /* BlockType.swift in Sources */,
 				A10000040000000000000001 /* VoxelWorld.swift in Sources */,
 				A10000070000000000000001 /* TexturePack.swift in Sources */,
+				A10000080000000000000001 /* AIGameStudio.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

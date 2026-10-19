@@ -10,6 +10,7 @@ struct ContentView: View {
     @State private var showingSettingsSheet = false
     @State private var showingSkinsSheet = false
     @State private var showingTexturePacksSheet = false
+    @State private var showingAIStudioSheet = false
     @State private var showCameraFlash = false
 
     // Temporary drag states while dragging HUD elements in Edit Controls mode
@@ -27,7 +28,8 @@ struct ContentView: View {
                     showingWorldsSheet: $showingWorldsSheet,
                     showingSkinsSheet: $showingSkinsSheet,
                     showingMultiplayerSheet: $showingMultiplayerSheet,
-                    showingSettingsSheet: $showingSettingsSheet
+                    showingSettingsSheet: $showingSettingsSheet,
+                    showingAIStudioSheet: $showingAIStudioSheet
                 )
             } else {
                 inGameWorldView
@@ -68,7 +70,7 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $showingWorldsSheet) {
-            SavedWorldsSheet(world: world)
+            SavedWorldsSheet(world: world, showingAIStudioSheet: $showingAIStudioSheet)
         }
         .sheet(isPresented: $showingMultiplayerSheet) {
             LocalMultiplayerSheet(world: world)
@@ -78,14 +80,18 @@ struct ContentView: View {
                 world: world,
                 showingSkinsSheet: $showingSkinsSheet,
                 showingWorldsSheet: $showingWorldsSheet,
-                showingTexturePacksSheet: $showingTexturePacksSheet
+                showingTexturePacksSheet: $showingTexturePacksSheet,
+                showingAIStudioSheet: $showingAIStudioSheet
             )
         }
         .sheet(isPresented: $showingSkinsSheet) {
-            CharacterSkinsSheet(world: world)
+            CharacterSkinsSheet(world: world, showingAIStudioSheet: $showingAIStudioSheet)
         }
         .sheet(isPresented: $showingTexturePacksSheet) {
             TexturePacksSheet(world: world)
+        }
+        .sheet(isPresented: $showingAIStudioSheet) {
+            AIStudioSheet(world: world)
         }
         .onChange(of: showingSettingsSheet) { _ in
             world.resetInputState()
@@ -107,6 +113,10 @@ struct ContentView: View {
             world.resetInputState()
             joystickOffset = .zero
         }
+        .onChange(of: showingAIStudioSheet) { _ in
+            world.resetInputState()
+            joystickOffset = .zero
+        }
     }
 
     private func dismissAllSheets() {
@@ -115,6 +125,7 @@ struct ContentView: View {
         showingSettingsSheet = false
         showingSkinsSheet = false
         showingTexturePacksSheet = false
+        showingAIStudioSheet = false
     }
 
     private func triggerCameraFlash() {
@@ -1002,6 +1013,7 @@ struct LocalMultiplayerSheet: View {
 
 struct SavedWorldsSheet: View {
     @ObservedObject var world: VoxelWorld
+    @Binding var showingAIStudioSheet: Bool
     @Environment(\.dismiss) private var dismiss
     @State private var worldNameInput: String = ""
     @State private var selectedWorldType: WorldType = .standard
@@ -1040,9 +1052,87 @@ struct SavedWorldsSheet: View {
 
                 Section("Create New World") {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("SELECT WORLD TYPE")
+                        Button {
+                            dismiss()
+                            showingAIStudioSheet = true
+                        } label: {
+                            HStack {
+                                ZStack {
+                                    Circle()
+                                        .fill(LinearGradient(colors: [.purple, .blue], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                        .frame(width: 32, height: 32)
+                                    Image(systemName: "sparkles")
+                                        .foregroundColor(.white)
+                                        .font(.system(size: 14, weight: .bold))
+                                }
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text("✨ AI World Generator")
+                                        .font(.system(size: 13, weight: .bold, design: .monospaced))
+                                        .foregroundColor(.purple)
+                                    Text("Describe any world type in natural language")
+                                        .font(.system(size: 10, design: .monospaced))
+                                        .foregroundColor(.secondary)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .foregroundColor(.secondary)
+                                    .font(.system(size: 12))
+                            }
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 10)
+                            .background(Color.purple.opacity(0.12))
+                            .cornerRadius(8)
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.purple.opacity(0.35), lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+
+                        if !world.customWorldTypes.isEmpty {
+                            Text("SAVED AI WORLD TYPES")
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .foregroundColor(.purple)
+                                .padding(.top, 4)
+
+                            ForEach(world.customWorldTypes) { custom in
+                                Button {
+                                    world.regenerateWithCustomWorld(custom)
+                                    dismiss()
+                                } label: {
+                                    HStack(spacing: 10) {
+                                        Image(systemName: custom.iconName)
+                                            .foregroundColor(.purple)
+                                            .font(.system(size: 16))
+                                            .frame(width: 28)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(custom.name)
+                                                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                                                .foregroundColor(.primary)
+                                            Text(custom.summary)
+                                                .font(.system(size: 9, design: .monospaced))
+                                                .foregroundColor(.secondary)
+                                                .lineLimit(1)
+                                        }
+                                        Spacer()
+                                        Text("GENERATE")
+                                            .font(.system(size: 9, weight: .black, design: .monospaced))
+                                            .foregroundColor(.green)
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 4)
+                                            .background(Color.green.opacity(0.15))
+                                            .cornerRadius(6)
+                                    }
+                                    .padding(.vertical, 6)
+                                    .padding(.horizontal, 8)
+                                    .background(Color.purple.opacity(0.06))
+                                    .cornerRadius(8)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+
+                        Text("STANDARD WORLD TYPES")
                             .font(.system(size: 10, weight: .bold, design: .monospaced))
                             .foregroundColor(.secondary)
+                            .padding(.top, 4)
 
                         ForEach(WorldType.allCases) { type in
                             Button {
@@ -1201,6 +1291,7 @@ struct MainMenuView: View {
     @Binding var showingSkinsSheet: Bool
     @Binding var showingMultiplayerSheet: Bool
     @Binding var showingSettingsSheet: Bool
+    @Binding var showingAIStudioSheet: Bool
 
     var body: some View {
         ZStack {
@@ -1232,9 +1323,13 @@ struct MainMenuView: View {
                     showingSkinsSheet = true
                 } label: {
                     HStack(spacing: 10) {
-                        CharacterAvatarPreview(skin: world.selectedSkin, size: 28)
+                        if let custom = world.activeCustomSkin {
+                            CharacterAvatarPreview(customSkin: custom, size: 28)
+                        } else {
+                            CharacterAvatarPreview(skin: world.selectedSkin, size: 28)
+                        }
                         VStack(alignment: .leading, spacing: 1) {
-                            Text("SKIN: \(world.selectedSkin.displayName.uppercased())")
+                            Text("SKIN: \((world.activeCustomSkin?.name ?? world.selectedSkin.displayName).uppercased())")
                                 .font(.system(size: 11, weight: .bold, design: .monospaced))
                                 .foregroundColor(.white)
                             Text("Tap to change skin")
@@ -1265,6 +1360,15 @@ struct MainMenuView: View {
                         color: .green
                     ) {
                         showingWorldsSheet = true
+                    }
+
+                    MainMenuButton(
+                        title: "AI STUDIO",
+                        subtitle: "Create Worlds & Skins with AI",
+                        icon: "sparkles",
+                        color: .purple
+                    ) {
+                        showingAIStudioSheet = true
                     }
 
                     MainMenuButton(
@@ -1363,11 +1467,32 @@ struct MainMenuButton: View {
 // MARK: - Character Avatar Preview & Skins Sheet
 
 struct CharacterAvatarPreview: View {
-    let skin: PlayerSkin
+    var skin: PlayerSkin? = nil
+    var customSkin: CustomSkin? = nil
     var size: CGFloat = 36
 
+    init(skin: PlayerSkin, size: CGFloat = 36) {
+        self.skin = skin
+        self.customSkin = nil
+        self.size = size
+    }
+
+    init(customSkin: CustomSkin, size: CGFloat = 36) {
+        self.skin = nil
+        self.customSkin = customSkin
+        self.size = size
+    }
+
     var body: some View {
-        let avatarImage = SkinTextureManager.shared.frontAvatarImage(for: skin)
+        let avatarImage: UIImage = {
+            if let custom = customSkin {
+                return SkinTextureManager.shared.frontAvatarImage(for: custom)
+            } else if let s = skin {
+                return SkinTextureManager.shared.frontAvatarImage(for: s)
+            } else {
+                return SkinTextureManager.shared.frontAvatarImage(for: .steve)
+            }
+        }()
         Image(uiImage: avatarImage)
             .interpolation(.none)
             .resizable()
@@ -1379,6 +1504,7 @@ struct CharacterAvatarPreview: View {
 
 struct CharacterSkinsSheet: View {
     @ObservedObject var world: VoxelWorld
+    @Binding var showingAIStudioSheet: Bool
     @Environment(\.dismiss) private var dismiss
 
     let columns = [
@@ -1391,16 +1517,23 @@ struct CharacterSkinsSheet: View {
                 VStack(spacing: 16) {
                     // Header card
                     HStack(spacing: 14) {
-                        CharacterAvatarPreview(skin: world.selectedSkin, size: 52)
-                            .padding(8)
-                            .background(Color.white.opacity(0.1))
-                            .cornerRadius(10)
+                        if let custom = world.activeCustomSkin {
+                            CharacterAvatarPreview(customSkin: custom, size: 52)
+                                .padding(8)
+                                .background(Color.white.opacity(0.1))
+                                .cornerRadius(10)
+                        } else {
+                            CharacterAvatarPreview(skin: world.selectedSkin, size: 52)
+                                .padding(8)
+                                .background(Color.white.opacity(0.1))
+                                .cornerRadius(10)
+                        }
 
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("Current Skin: \(world.selectedSkin.displayName)")
+                            Text("Current Skin: \(world.activeCustomSkin?.name ?? world.selectedSkin.displayName)")
                                 .font(.system(size: 15, weight: .black, design: .monospaced))
                                 .foregroundColor(.white)
-                            Text(world.selectedSkin.roleSubtitle)
+                            Text(world.activeCustomSkin?.roleSubtitle ?? world.selectedSkin.roleSubtitle)
                                 .font(.system(size: 11, weight: .bold, design: .monospaced))
                                 .foregroundColor(.yellow)
                             Text("Other players see this skin in local multiplayer!")
@@ -1417,10 +1550,117 @@ struct CharacterSkinsSheet: View {
                             .stroke(Color.white.opacity(0.25), lineWidth: 1)
                     )
 
+                    // AI Skin Generator Button
+                    Button {
+                        dismiss()
+                        showingAIStudioSheet = true
+                    } label: {
+                        HStack {
+                            ZStack {
+                                Circle()
+                                    .fill(LinearGradient(colors: [.cyan, .indigo], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                    .frame(width: 34, height: 34)
+                                Image(systemName: "sparkles")
+                                    .foregroundColor(.white)
+                                    .font(.system(size: 15, weight: .bold))
+                            }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("✨ AI Skin Generator")
+                                    .font(.system(size: 13, weight: .bold, design: .monospaced))
+                                    .foregroundColor(.cyan)
+                                Text("Describe and synthesize custom 64x64 skins")
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundColor(.white.opacity(0.75))
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .foregroundColor(.white.opacity(0.6))
+                        }
+                        .padding(12)
+                        .background(Color.cyan.opacity(0.12))
+                        .cornerRadius(12)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color.cyan.opacity(0.4), lineWidth: 1)
+                        )
+                    }
+
+                    // Saved AI Skins Grid
+                    if !world.customSkins.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("SAVED AI CHARACTER SKINS (\(world.customSkins.count))")
+                                .font(.system(size: 11, weight: .black, design: .monospaced))
+                                .foregroundColor(.cyan)
+
+                            LazyVGrid(columns: columns, spacing: 12) {
+                                ForEach(world.customSkins) { skin in
+                                    let isEquipped = (world.activeCustomSkin?.id == skin.id)
+                                    Button {
+                                        world.equipCustomSkin(skin)
+                                    } label: {
+                                        VStack(spacing: 8) {
+                                            CharacterAvatarPreview(customSkin: skin, size: 46)
+                                                .frame(height: 64)
+
+                                            VStack(spacing: 2) {
+                                                Text(skin.name)
+                                                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                                    .foregroundColor(.white)
+                                                    .lineLimit(1)
+                                                Text(skin.roleSubtitle)
+                                                    .font(.system(size: 9, design: .monospaced))
+                                                    .foregroundColor(.cyan)
+                                                    .lineLimit(1)
+                                            }
+
+                                            if isEquipped {
+                                                HStack(spacing: 4) {
+                                                    Image(systemName: "checkmark.circle.fill")
+                                                    Text("EQUIPPED")
+                                                }
+                                                .font(.system(size: 9, weight: .black, design: .monospaced))
+                                                .foregroundColor(.green)
+                                                .padding(.horizontal, 8)
+                                                .padding(.vertical, 4)
+                                                .background(Color.green.opacity(0.2))
+                                                .cornerRadius(6)
+                                            } else {
+                                                Text("TAP TO EQUIP")
+                                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                                    .foregroundColor(.white.opacity(0.6))
+                                                    .padding(.horizontal, 8)
+                                                    .padding(.vertical, 4)
+                                                    .background(Color.white.opacity(0.1))
+                                                    .cornerRadius(6)
+                                            }
+                                        }
+                                        .padding(10)
+                                        .frame(maxWidth: .infinity)
+                                        .background(isEquipped ? Color.green.opacity(0.12) : Color.black.opacity(0.5))
+                                        .cornerRadius(10)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 10)
+                                                .stroke(isEquipped ? Color.green.opacity(0.6) : Color.white.opacity(0.2), lineWidth: 1)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Built-in Skins Header
+                    HStack {
+                        Text("STANDARD CHARACTERS")
+                            .font(.system(size: 11, weight: .black, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.6))
+                        Spacer()
+                    }
+                    .padding(.top, 4)
+
                     // Skins Grid
                     LazyVGrid(columns: columns, spacing: 12) {
                         ForEach(PlayerSkin.allCases) { skin in
-                            let isEquipped = (world.selectedSkin == skin)
+                            let isEquipped = (world.activeCustomSkin == nil && world.selectedSkin == skin)
                             Button {
                                 world.setSkin(skin)
                             } label: {
@@ -1640,6 +1880,7 @@ struct InGameSettingsSheet: View {
     @Binding var showingSkinsSheet: Bool
     @Binding var showingWorldsSheet: Bool
     @Binding var showingTexturePacksSheet: Bool
+    @Binding var showingAIStudioSheet: Bool
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -1683,12 +1924,16 @@ struct InGameSettingsSheet: View {
                         showingSkinsSheet = true
                     } label: {
                         HStack {
-                            CharacterAvatarPreview(skin: world.selectedSkin, size: 24)
+                            if let custom = world.activeCustomSkin {
+                                CharacterAvatarPreview(customSkin: custom, size: 24)
+                            } else {
+                                CharacterAvatarPreview(skin: world.selectedSkin, size: 24)
+                            }
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Change Character Skin")
                                     .font(.system(size: 13, weight: .bold, design: .monospaced))
                                     .foregroundColor(.white)
-                                Text("Current: \(world.selectedSkin.displayName)")
+                                Text("Current: \(world.activeCustomSkin?.name ?? world.selectedSkin.displayName)")
                                     .font(.system(size: 10, weight: .medium, design: .monospaced))
                                     .foregroundColor(.cyan)
                             }
@@ -1715,6 +1960,32 @@ struct InGameSettingsSheet: View {
                                     .font(.system(size: 13, weight: .bold, design: .monospaced))
                                     .foregroundColor(.white)
                                 Text("Current: \(world.currentTexturePack.displayName)")
+                                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                    .foregroundColor(.cyan)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .foregroundColor(.gray)
+                        }
+                    }
+
+                    Button {
+                        showingAIStudioSheet = true
+                    } label: {
+                        HStack {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(Color.purple.opacity(0.25))
+                                    .frame(width: 24, height: 24)
+                                Image(systemName: "sparkles")
+                                    .foregroundColor(.purple)
+                                    .font(.system(size: 13, weight: .bold))
+                            }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("AI Studio (Worlds & Skins)")
+                                    .font(.system(size: 13, weight: .bold, design: .monospaced))
+                                    .foregroundColor(.white)
+                                Text("Generate custom worlds & character skins")
                                     .font(.system(size: 10, weight: .medium, design: .monospaced))
                                     .foregroundColor(.cyan)
                             }

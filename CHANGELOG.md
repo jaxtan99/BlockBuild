@@ -10,6 +10,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [1.7.0] - 2026-10-19
+
+### Added
+- **On-Device Lightweight AI Game Studio (Custom Worlds & Character Skins)**:
+  - **100% Offline AI Synthesizer (`LightweightGameAI`)**: Runs natively on-device with zero latency, zero cloud API dependencies, and no API keys required.
+  - **Natural Language World Generation Types**:
+    - Describe any terrain, biome, planetary mood, or material in natural language (e.g., *"Floating celestial sky islands with waterfalls and purple twilight clouds"*, *"Volcanic inferno with dark obsidian rocks and crimson ash skies"*, *"Deep mysterious cavern abyss with glowing stalactites"*).
+    - Multi-stage semantic tokenizer classifies elevation archetypes (amplified peaks, floating void islands, subterranean caverns, tropical archipelago, endless dunes, flat plains), surface/subsurface/deep stone materials, fluid water levels, flora & tree styles, atmospheric sky and fog colors, and lighting intensity.
+    - Saves synthesized world types permanently to `UserDefaults` / JSON; seamlessly available in "Create New World" and playable immediately with full multi-chunk terrain persistence and custom atmosphere.
+  - **Natural Language Character Skin Synthesizer**:
+    - Describe any character theme, hero, armor, or color palette (e.g., *"Cyberpunk neon operative with dark tactical armor, glowing cyan visor, and purple circuits"*, *"Ancient horned desert warlord with obsidian chestplate and amber eyes"*, *"Deep cavern spelunker with brass miner headlamp"*).
+    - AI synthesizes authentic 64x64 RGBA bitmap PNG textures matching standard Minecraft UV mapping (head front/sides/top/bottom, torso, arms, legs, and overlay features) with procedural pixel-art shading.
+    - Saves skins permanently; selectable in Character Skins sheet, customizable in AI Studio, and rendered in 3D in both single-player and local Wi-Fi multiplayer.
+  - **Interactive AI Game Studio UI (`AIStudioSheet`)**:
+    - Dedicated studio interface with tabs for **World Generator** and **Skin Generator**.
+    - Includes interactive "🎲 Surprise Me" prompt inspiration chips for rapid generation.
+    - Real-time preview cards displaying synthesized parameters, material swatches, atmospheric color pills, and live 3D avatar renders.
+    - Integrated seamlessly across the app: Main Menu ("AI STUDIO"), In-Game Settings ("AI Studio"), Saved Worlds sheet ("✨ AI World Generator"), and Character Skins sheet ("✨ AI Skin Generator").
+
+---
+
 ## [1.6.0] - 2026-10-19
 
 ### Added
