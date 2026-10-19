@@ -428,7 +428,7 @@ struct ControlLayoutConfig: Codable, Equatable {
     var hotbarScale: CGFloat = 1.0
     var controlOpacity: Double = 0.92
     var lookSensitivity: Float = 1.0
-    var movementSpeedMultiplier: Float = 1.0
+    var movementSpeedMultiplier: Float = 0.6
     var swapLeftRight: Bool = false
 
     static let `default` = ControlLayoutConfig()
@@ -459,7 +459,7 @@ struct ControlLayoutConfig: Codable, Equatable {
         hotbarScale: CGFloat = 1.0,
         controlOpacity: Double = 0.92,
         lookSensitivity: Float = 1.0,
-        movementSpeedMultiplier: Float = 1.0,
+        movementSpeedMultiplier: Float = 0.6,
         swapLeftRight: Bool = false
     ) {
         self.joystickOffsetX = joystickOffsetX
@@ -499,7 +499,7 @@ struct ControlLayoutConfig: Codable, Equatable {
         hotbarScale = try container.decodeIfPresent(CGFloat.self, forKey: .hotbarScale) ?? 1.0
         controlOpacity = try container.decodeIfPresent(Double.self, forKey: .controlOpacity) ?? 0.92
         lookSensitivity = try container.decodeIfPresent(Float.self, forKey: .lookSensitivity) ?? 1.0
-        movementSpeedMultiplier = try container.decodeIfPresent(Float.self, forKey: .movementSpeedMultiplier) ?? 1.0
+        movementSpeedMultiplier = try container.decodeIfPresent(Float.self, forKey: .movementSpeedMultiplier) ?? 0.6
         swapLeftRight = try container.decodeIfPresent(Bool.self, forKey: .swapLeftRight) ?? false
     }
 }
@@ -1239,9 +1239,9 @@ final class VoxelWorld: NSObject, ObservableObject {
         if let data = UserDefaults.standard.data(forKey: controlLayoutKey),
            let decoded = try? JSONDecoder().decode(ControlLayoutConfig.self, from: data) {
             controlLayout = decoded
-            if UserDefaults.standard.object(forKey: "blockbuild_speed_v50_migrated") == nil {
-                controlLayout.movementSpeedMultiplier = 1.0
-                UserDefaults.standard.set(true, forKey: "blockbuild_speed_v50_migrated")
+            if UserDefaults.standard.object(forKey: "blockbuild_speed_v30_migrated") == nil {
+                controlLayout.movementSpeedMultiplier = 0.6
+                UserDefaults.standard.set(true, forKey: "blockbuild_speed_v30_migrated")
                 saveControlLayout()
             }
             if UserDefaults.standard.object(forKey: "blockbuild_door_btn_v2_migrated") == nil {

@@ -10,6 +10,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [1.4.9] - 2026-10-18
+
+### Changed
+- **Default Movement Speed Set to 3.0x**:
+  - Changed default `movementSpeedMultiplier` to `0.6` (which cleanly displays as **`3.0x`** in the settings slider, calculated via `0.6 / 0.2 = 3.0x`).
+  - Added automatic migration `blockbuild_speed_v30_migrated` in `loadControlLayout()` to update existing saved control settings to the new 3.0x default.
+
+---
+
 ## [1.4.8] - 2026-10-18
 
 ### Changed
