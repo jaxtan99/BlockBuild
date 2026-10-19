@@ -516,6 +516,10 @@ enum SkinFeatureStyle: String, Codable, CaseIterable {
     case ninjaMask
     case horns
     case furHood
+    case crown
+    case pirateEyepatch
+    case headphones
+    case villagerRobe
 }
 
 enum PlayerSkin: String, CaseIterable, Codable, Identifiable {
@@ -773,21 +777,23 @@ struct MultiplayerPacket: Codable {
 
     var kind: Kind
     var senderName: String
-    var skinRaw: String?
+    var skinRaw: String? = nil
+    var customSkin: CustomSkin? = nil
     // World Snapshot fields
-    var worldID: UUID?
-    var worldName: String?
-    var seed: Int?
-    var worldTypeRaw: String?
-    var deltas: [SavedBlockDelta]?
+    var worldID: UUID? = nil
+    var worldName: String? = nil
+    var seed: Int? = nil
+    var worldTypeRaw: String? = nil
+    var customWorldType: CustomWorldType? = nil
+    var deltas: [SavedBlockDelta]? = nil
     // Single Block Update fields
-    var blockDelta: SavedBlockDelta?
+    var blockDelta: SavedBlockDelta? = nil
     // Player Pose fields
-    var px: Float?
-    var py: Float?
-    var pz: Float?
-    var yaw: Float?
-    var pitch: Float?
+    var px: Float? = nil
+    var py: Float? = nil
+    var pz: Float? = nil
+    var yaw: Float? = nil
+    var pitch: Float? = nil
 }
 
 struct DiscoveredLocalHost: Identifiable, Equatable {
@@ -1055,6 +1061,7 @@ final class VoxelWorld: NSObject, ObservableObject {
     @Published var activeJoinPrompt: MultiplayerJoinPrompt? = nil
     private var dismissedPromptKeys: Set<String> = []
     private var remotePlayerSkins: [String: PlayerSkin] = [:]
+    private var remotePlayerCustomSkins: [String: CustomSkin] = [:]
 
     // Performance Stabilization & FPS Limit
     @Published var isPerformanceStabilizationEnabled: Bool = true {
@@ -1976,6 +1983,219 @@ final class VoxelWorld: NSObject, ObservableObject {
                             }
                         }
                         localBlocks[BlockCoord(x: x, y: topY + 1, z: z)] = .leaves
+                    }
+                }
+            }
+        }
+
+        // Custom World Procedural Villages & Architecture
+        if custom.hasVillages || custom.structureType != "none" {
+            let chunkHash = abs((chunk.cx &* 73856093) ^ (chunk.cz &* 19349663) ^ (worldSeed &* 83492791)) % 100
+            let densityThreshold = Int(max(0.15, custom.villageDensity) * 100.0)
+            let isSpawnVillage = (abs(chunk.cx) <= 1 && abs(chunk.cz) <= 1)
+
+            if chunkHash < densityThreshold || isSpawnVillage {
+                let centerX = minX + 5
+                let centerZ = minZ + 5
+                if let groundH = heights[centerX]?[centerZ], groundH >= 1 && groundH < 26 {
+                    let style = custom.villageStyle
+                    let wallBlock: BlockType
+                    let cornerBlock: BlockType
+                    let roofBlock: BlockType
+                    let pathBlock: BlockType
+
+                    switch style {
+                    case "desert":
+                        wallBlock = .sand
+                        cornerBlock = .smoothStone
+                        roofBlock = .smoothStone
+                        pathBlock = .smoothStone
+                    case "stone", "castle":
+                        wallBlock = .stone
+                        cornerBlock = .smoothStone
+                        roofBlock = .stone
+                        pathBlock = .smoothStone
+                    case "cyber":
+                        wallBlock = .smoothStone
+                        cornerBlock = .glass
+                        roofBlock = .smoothStone
+                        pathBlock = .glass
+                    case "ruins":
+                        wallBlock = .stone
+                        cornerBlock = .stone
+                        roofBlock = .dirt
+                        pathBlock = .stone
+                    default:
+                        wallBlock = .woodPlanks
+                        cornerBlock = .woodLog
+                        roofBlock = .woodPlanks
+                        pathBlock = .stone
+                    }
+
+                    let structureVariant = (chunkHash + abs(chunk.cx * 3 + chunk.cz * 7)) % 4
+
+                    if structureVariant == 0 || structureVariant == 2 {
+                        // --- A. Authentic Village Cottage / House ---
+                        let bMinX = minX + 2
+                        let bMaxX = minX + 6
+                        let bMinZ = minZ + 2
+                        let bMaxZ = minZ + 6
+                        let baseFloorY = groundH
+                        let wallTopY = baseFloorY + 3
+                        let roofPeakY = baseFloorY + 4
+
+                        // Foundation & Floor
+                        for bx in bMinX...bMaxX {
+                            for bz in bMinZ...bMaxZ {
+                                let currH = heights[bx]?[bz] ?? baseFloorY
+                                for fy in min(currH, baseFloorY)...baseFloorY {
+                                    localBlocks[BlockCoord(x: bx, y: fy, z: bz)] = (bx == bMinX || bx == bMaxX || bz == bMinZ || bz == bMaxZ) ? cornerBlock : .woodPlanks
+                                }
+                            }
+                        }
+
+                        // Walls with windows and door
+                        for bx in bMinX...bMaxX {
+                            for bz in bMinZ...bMaxZ {
+                                let isCorner = (bx == bMinX || bx == bMaxX) && (bz == bMinZ || bz == bMaxZ)
+                                let isPerimeter = (bx == bMinX || bx == bMaxX || bz == bMinZ || bz == bMaxZ)
+
+                                if isPerimeter {
+                                    for wy in (baseFloorY + 1)...wallTopY {
+                                        let coord = BlockCoord(x: bx, y: wy, z: bz)
+                                        if isCorner {
+                                            localBlocks[coord] = cornerBlock
+                                        } else if wy == baseFloorY + 2 && (bx == bMinX + 2 || bz == bMinZ + 2) {
+                                            localBlocks[coord] = .glass
+                                        } else if wy <= baseFloorY + 2 && bx == bMinX + 2 && bz == bMinZ {
+                                            if wy == baseFloorY + 1 {
+                                                localBlocks[coord] = .door
+                                            } else {
+                                                localBlocks.removeValue(forKey: coord)
+                                            }
+                                        } else {
+                                            localBlocks[coord] = wallBlock
+                                        }
+                                    }
+                                } else {
+                                    for wy in (baseFloorY + 1)...roofPeakY {
+                                        localBlocks.removeValue(forKey: BlockCoord(x: bx, y: wy, z: bz))
+                                    }
+                                }
+                            }
+                        }
+
+                        // Roof
+                        for bx in (bMinX - 1)...(bMaxX + 1) {
+                            for bz in (bMinZ - 1)...(bMaxZ + 1) {
+                                localBlocks[BlockCoord(x: bx, y: roofPeakY, z: bz)] = roofBlock
+                            }
+                        }
+                        for bx in bMinX...bMaxX {
+                            for bz in bMinZ...bMaxZ {
+                                localBlocks[BlockCoord(x: bx, y: roofPeakY + 1, z: bz)] = roofBlock
+                            }
+                        }
+
+                    } else if structureVariant == 1 {
+                        // --- B. Village Stone Watchtower ---
+                        let tMinX = minX + 3
+                        let tMaxX = minX + 6
+                        let tMinZ = minZ + 3
+                        let tMaxZ = minZ + 6
+                        let towerBaseY = groundH
+                        let towerTopY = towerBaseY + 6
+
+                        // Foundation
+                        for tx in tMinX...tMaxX {
+                            for tz in tMinZ...tMaxZ {
+                                let currH = heights[tx]?[tz] ?? towerBaseY
+                                for fy in min(currH, towerBaseY)...towerBaseY {
+                                    localBlocks[BlockCoord(x: tx, y: fy, z: tz)] = .stone
+                                }
+                            }
+                        }
+
+                        // Walls
+                        for wy in (towerBaseY + 1)...towerTopY {
+                            for tx in tMinX...tMaxX {
+                                for tz in tMinZ...tMaxZ {
+                                    let isPerimeter = (tx == tMinX || tx == tMaxX || tz == tMinZ || tz == tMaxZ)
+                                    let coord = BlockCoord(x: tx, y: wy, z: tz)
+                                    if isPerimeter {
+                                        if (wy == towerBaseY + 3 || wy == towerBaseY + 5) && (tx == tMinX + 1 || tz == tMinZ + 1) {
+                                            localBlocks[coord] = .glass
+                                        } else if wy == towerBaseY + 1 && tx == tMinX + 1 && tz == tMinZ {
+                                            localBlocks[coord] = .door
+                                        } else {
+                                            localBlocks[coord] = .stone
+                                        }
+                                    } else {
+                                        localBlocks.removeValue(forKey: coord)
+                                    }
+                                }
+                            }
+                        }
+
+                        // Battlements
+                        for tx in (tMinX - 1)...(tMaxX + 1) {
+                            for tz in (tMinZ - 1)...(tMaxZ + 1) {
+                                localBlocks[BlockCoord(x: tx, y: towerTopY, z: tz)] = .smoothStone
+                                if (tx == tMinX - 1 || tx == tMaxX + 1 || tz == tMinZ - 1 || tz == tMaxZ + 1) && (tx + tz) % 2 == 0 {
+                                    localBlocks[BlockCoord(x: tx, y: towerTopY + 1, z: tz)] = .stone
+                                }
+                            }
+                        }
+
+                    } else {
+                        // --- C. Village Water Well & Plaza ---
+                        let wMinX = minX + 3
+                        let wMaxX = minX + 6
+                        let wMinZ = minZ + 3
+                        let wMaxZ = minZ + 6
+                        let wellBaseY = groundH
+
+                        for wx in wMinX...wMaxX {
+                            for wz in wMinZ...wMaxZ {
+                                let isRim = (wx == wMinX || wx == wMaxX || wz == wMinZ || wz == wMaxZ)
+                                let coord = BlockCoord(x: wx, y: wellBaseY, z: wz)
+                                localBlocks[coord] = .stone
+
+                                if isRim {
+                                    localBlocks[BlockCoord(x: wx, y: wellBaseY + 1, z: wz)] = .stone
+                                } else {
+                                    localBlocks[BlockCoord(x: wx, y: wellBaseY - 1, z: wz)] = .water
+                                    localBlocks[BlockCoord(x: wx, y: wellBaseY, z: wz)] = .water
+                                    waterSourceBlocks.insert(BlockCoord(x: wx, y: wellBaseY, z: wz))
+                                }
+                            }
+                        }
+                        let roofY = wellBaseY + 4
+                        for cx in [wMinX, wMaxX] {
+                            for cz in [wMinZ, wMaxZ] {
+                                for py in (wellBaseY + 2)...roofY {
+                                    localBlocks[BlockCoord(x: cx, y: py, z: cz)] = .woodLog
+                                }
+                            }
+                        }
+                        for wx in (wMinX - 1)...(wMaxX + 1) {
+                            for wz in (wMinZ - 1)...(wMaxZ + 1) {
+                                localBlocks[BlockCoord(x: wx, y: roofY, z: wz)] = .woodPlanks
+                            }
+                        }
+                    }
+
+                    // --- D. Connecting Village Pathways ---
+                    let pathZ = minZ + 1
+                    for px in minX..<maxX {
+                        if let gh = heights[px]?[pathZ], gh >= 1 {
+                            let pathCoord = BlockCoord(x: px, y: gh, z: pathZ)
+                            if localBlocks[pathCoord] != .water && localBlocks[pathCoord] != .door {
+                                localBlocks[pathCoord] = pathBlock
+                            }
+                            localBlocks.removeValue(forKey: BlockCoord(x: px, y: gh + 1, z: pathZ))
+                            localBlocks.removeValue(forKey: BlockCoord(x: px, y: gh + 2, z: pathZ))
+                        }
                     }
                 }
             }
@@ -4494,6 +4714,7 @@ final class VoxelWorld: NSObject, ObservableObject {
         }
         remotePlayerNodes.removeAll()
         remotePlayerSkins.removeAll()
+        remotePlayerCustomSkins.removeAll()
         if isInGame {
             startMultiplayerServices()
         } else {
@@ -4558,10 +4779,12 @@ final class VoxelWorld: NSObject, ObservableObject {
                 kind: .worldSnapshot,
                 senderName: localPlayerName,
                 skinRaw: selectedSkin.rawValue,
+                customSkin: activeCustomSkin,
                 worldID: currentWorldID,
                 worldName: currentWorldName,
                 seed: worldSeed,
                 worldTypeRaw: currentWorldType.rawValue,
+                customWorldType: activeCustomWorld,
                 deltas: [],
                 blockDelta: nil,
                 px: playerPosition.x,
@@ -4579,10 +4802,12 @@ final class VoxelWorld: NSObject, ObservableObject {
                     kind: .worldSnapshot,
                     senderName: localPlayerName,
                     skinRaw: selectedSkin.rawValue,
+                    customSkin: activeCustomSkin,
                     worldID: currentWorldID,
                     worldName: currentWorldName,
                     seed: worldSeed,
                     worldTypeRaw: currentWorldType.rawValue,
+                    customWorldType: activeCustomWorld,
                     deltas: chunk,
                     blockDelta: nil,
                     px: playerPosition.x,
@@ -4602,9 +4827,12 @@ final class VoxelWorld: NSObject, ObservableObject {
             kind: .blockUpdate,
             senderName: localPlayerName,
             skinRaw: nil,
+            customSkin: nil,
             worldID: currentWorldID,
             worldName: nil,
             seed: nil,
+            worldTypeRaw: nil,
+            customWorldType: nil,
             deltas: nil,
             blockDelta: delta,
             px: nil,
@@ -4622,9 +4850,12 @@ final class VoxelWorld: NSObject, ObservableObject {
             kind: .playerPose,
             senderName: localPlayerName,
             skinRaw: selectedSkin.rawValue,
+            customSkin: activeCustomSkin,
             worldID: currentWorldID,
             worldName: nil,
             seed: nil,
+            worldTypeRaw: nil,
+            customWorldType: nil,
             deltas: nil,
             blockDelta: nil,
             px: playerPosition.x,
@@ -4669,7 +4900,25 @@ final class VoxelWorld: NSObject, ObservableObject {
             currentWorldID = packet.worldID ?? UUID()
             currentWorldName = packet.worldName ?? "\(peer.displayName)'s World"
             worldSeed = seed
-            currentWorldType = WorldType.from(archetypeName: packet.worldTypeRaw)
+
+            if let downloadedCustomWorld = packet.customWorldType {
+                // Download and save custom world type into local device storage
+                saveCustomWorldType(downloadedCustomWorld)
+                activeCustomWorld = downloadedCustomWorld
+                currentWorldType = downloadedCustomWorld.baseWorldType
+            } else {
+                activeCustomWorld = nil
+                currentWorldType = WorldType.from(archetypeName: packet.worldTypeRaw)
+            }
+
+            if let downloadedCustomSkin = packet.customSkin {
+                if !customSkins.contains(where: { $0.id == downloadedCustomSkin.id }) {
+                    saveCustomSkin(downloadedCustomSkin)
+                }
+            }
+
+            applyAtmosphere()
+
             currentArchetype = WorldArchetype(rawValue: abs(seed) % WorldArchetype.allCases.count) ?? .alphaCliffs
             configureNoiseGenerators(seed: seed)
 
@@ -4700,7 +4949,11 @@ final class VoxelWorld: NSObject, ObservableObject {
             updateCameraTransform()
             isInGame = true
             saveCurrentWorld(silent: true)
-            statusToast = "Joined '\(currentWorldName)' with \(peer.displayName)!"
+            if let custom = packet.customWorldType {
+                statusToast = "Joined & downloaded world type '\(custom.name)'!"
+            } else {
+                statusToast = "Joined '\(currentWorldName)' with \(peer.displayName)!"
+            }
 
         case .blockUpdate:
             guard let d = packet.blockDelta else { return }
@@ -4748,7 +5001,12 @@ final class VoxelWorld: NSObject, ObservableObject {
                   let pYaw = packet.yaw else { return }
             let skin = packet.skinRaw.flatMap { PlayerSkin(rawValue: $0) } ?? .steve
             let sender = packet.senderName.isEmpty ? peer.displayName : packet.senderName
-            updateRemotePlayerAvatar(name: sender, skin: skin, x: px, y: py, z: pz, yaw: pYaw)
+            if let cSkin = packet.customSkin {
+                if !customSkins.contains(where: { $0.id == cSkin.id }) {
+                    saveCustomSkin(cSkin)
+                }
+            }
+            updateRemotePlayerAvatar(name: sender, skin: skin, customSkin: packet.customSkin, x: px, y: py, z: pz, yaw: pYaw)
 
             // Multi-device relay: Host relays player pose to ALL other connected peers
             if isHostingMultiplayer {
@@ -4764,21 +5022,28 @@ final class VoxelWorld: NSObject, ObservableObject {
                 node.removeFromParentNode()
             }
             remotePlayerSkins.removeValue(forKey: leftName)
+            remotePlayerCustomSkins.removeValue(forKey: leftName)
             connectedPlayerNames.removeAll { $0 == leftName }
             statusToast = "\(leftName) left"
         }
     }
 
-    private func updateRemotePlayerAvatar(name: String, skin: PlayerSkin, x: Float, y: Float, z: Float, yaw: Float) {
+    private func updateRemotePlayerAvatar(name: String, skin: PlayerSkin, customSkin: CustomSkin? = nil, x: Float, y: Float, z: Float, yaw: Float) {
         let avatarNode: SCNNode
-        if let existing = remotePlayerNodes[name], remotePlayerSkins[name] == skin {
+        let skinUnchanged = (remotePlayerSkins[name] == skin) && (remotePlayerCustomSkins[name]?.id == customSkin?.id)
+        if let existing = remotePlayerNodes[name], skinUnchanged {
             avatarNode = existing
         } else {
             remotePlayerNodes[name]?.removeFromParentNode()
-            let created = Self.makeBlockyPlayerAvatarNode(name: name, skin: skin)
+            let created = Self.makeBlockyPlayerAvatarNode(name: name, skin: skin, customSkin: customSkin)
             playersRootNode.addChildNode(created)
             remotePlayerNodes[name] = created
             remotePlayerSkins[name] = skin
+            if let custom = customSkin {
+                remotePlayerCustomSkins[name] = custom
+            } else {
+                remotePlayerCustomSkins.removeValue(forKey: name)
+            }
             avatarNode = created
         }
 
@@ -5236,6 +5501,7 @@ extension VoxelWorld: MCSessionDelegate, MCNearbyServiceAdvertiserDelegate, MCNe
                     node.removeFromParentNode()
                 }
                 self.remotePlayerSkins.removeValue(forKey: leftName)
+                self.remotePlayerCustomSkins.removeValue(forKey: leftName)
                 self.connectedPlayerNames.removeAll { $0 == leftName }
                 self.statusToast = "\(leftName) left"
 

@@ -36,6 +36,12 @@ struct CustomWorldType: Identifiable, Codable, Equatable {
     var ambientIntensity: Float
     var sunIntensity: Float
 
+    // Village & Structure parameters
+    var hasVillages: Bool = false
+    var villageDensity: Float = 0.0 // 0.0 to 1.0 (e.g. 0.85 for full of villages)
+    var villageStyle: String = "medieval" // "medieval", "desert", "stone", "cyber", "ruins"
+    var structureType: String = "none" // "village", "castle", "pyramid", "temple", "tower", "cabins"
+
     var createdAt: Date = Date()
 
     var skyColor: Color {
@@ -44,6 +50,117 @@ struct CustomWorldType: Identifiable, Codable, Equatable {
 
     var fogColor: Color {
         Color(red: Double(fogRed), green: Double(fogGreen), blue: Double(fogBlue))
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, promptDescription, baseWorldType, iconName, summary
+        case surfaceBlock, subsurfaceBlock, deepBlock
+        case baseHeight, heightVariance, noiseFrequency, warpScale, waterLevel
+        case hasTrees, treeStyle, isFloatingIslands, isSubterranean
+        case skyRed, skyGreen, skyBlue, fogRed, fogGreen, fogBlue
+        case ambientIntensity, sunIntensity, createdAt
+        case hasVillages, villageDensity, villageStyle, structureType
+    }
+
+    init(
+        id: UUID = UUID(),
+        name: String,
+        promptDescription: String,
+        baseWorldType: WorldType,
+        iconName: String,
+        summary: String,
+        surfaceBlock: BlockType,
+        subsurfaceBlock: BlockType,
+        deepBlock: BlockType,
+        baseHeight: Float,
+        heightVariance: Float,
+        noiseFrequency: Float,
+        warpScale: Float,
+        waterLevel: Int,
+        hasTrees: Bool,
+        treeStyle: String,
+        isFloatingIslands: Bool,
+        isSubterranean: Bool,
+        skyRed: Float,
+        skyGreen: Float,
+        skyBlue: Float,
+        fogRed: Float,
+        fogGreen: Float,
+        fogBlue: Float,
+        ambientIntensity: Float,
+        sunIntensity: Float,
+        hasVillages: Bool = false,
+        villageDensity: Float = 0.0,
+        villageStyle: String = "medieval",
+        structureType: String = "none",
+        createdAt: Date = Date()
+    ) {
+        self.id = id
+        self.name = name
+        self.promptDescription = promptDescription
+        self.baseWorldType = baseWorldType
+        self.iconName = iconName
+        self.summary = summary
+        self.surfaceBlock = surfaceBlock
+        self.subsurfaceBlock = subsurfaceBlock
+        self.deepBlock = deepBlock
+        self.baseHeight = baseHeight
+        self.heightVariance = heightVariance
+        self.noiseFrequency = noiseFrequency
+        self.warpScale = warpScale
+        self.waterLevel = waterLevel
+        self.hasTrees = hasTrees
+        self.treeStyle = treeStyle
+        self.isFloatingIslands = isFloatingIslands
+        self.isSubterranean = isSubterranean
+        self.skyRed = skyRed
+        self.skyGreen = skyGreen
+        self.skyBlue = skyBlue
+        self.fogRed = fogRed
+        self.fogGreen = fogGreen
+        self.fogBlue = fogBlue
+        self.ambientIntensity = ambientIntensity
+        self.sunIntensity = sunIntensity
+        self.hasVillages = hasVillages
+        self.villageDensity = villageDensity
+        self.villageStyle = villageStyle
+        self.structureType = structureType
+        self.createdAt = createdAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try container.decode(String.self, forKey: .name)
+        promptDescription = try container.decodeIfPresent(String.self, forKey: .promptDescription) ?? ""
+        baseWorldType = try container.decode(WorldType.self, forKey: .baseWorldType)
+        iconName = try container.decodeIfPresent(String.self, forKey: .iconName) ?? "globe.americas.fill"
+        summary = try container.decodeIfPresent(String.self, forKey: .summary) ?? ""
+        surfaceBlock = try container.decode(BlockType.self, forKey: .surfaceBlock)
+        subsurfaceBlock = try container.decode(BlockType.self, forKey: .subsurfaceBlock)
+        deepBlock = try container.decode(BlockType.self, forKey: .deepBlock)
+        baseHeight = try container.decode(Float.self, forKey: .baseHeight)
+        heightVariance = try container.decode(Float.self, forKey: .heightVariance)
+        noiseFrequency = try container.decode(Float.self, forKey: .noiseFrequency)
+        warpScale = try container.decode(Float.self, forKey: .warpScale)
+        waterLevel = try container.decode(Int.self, forKey: .waterLevel)
+        hasTrees = try container.decode(Bool.self, forKey: .hasTrees)
+        treeStyle = try container.decode(String.self, forKey: .treeStyle)
+        isFloatingIslands = try container.decode(Bool.self, forKey: .isFloatingIslands)
+        isSubterranean = try container.decode(Bool.self, forKey: .isSubterranean)
+        skyRed = try container.decode(Float.self, forKey: .skyRed)
+        skyGreen = try container.decode(Float.self, forKey: .skyGreen)
+        skyBlue = try container.decode(Float.self, forKey: .skyBlue)
+        fogRed = try container.decode(Float.self, forKey: .fogRed)
+        fogGreen = try container.decode(Float.self, forKey: .fogGreen)
+        fogBlue = try container.decode(Float.self, forKey: .fogBlue)
+        ambientIntensity = try container.decode(Float.self, forKey: .ambientIntensity)
+        sunIntensity = try container.decode(Float.self, forKey: .sunIntensity)
+        hasVillages = try container.decodeIfPresent(Bool.self, forKey: .hasVillages) ?? false
+        villageDensity = try container.decodeIfPresent(Float.self, forKey: .villageDensity) ?? 0.0
+        villageStyle = try container.decodeIfPresent(String.self, forKey: .villageStyle) ?? "medieval"
+        structureType = try container.decodeIfPresent(String.self, forKey: .structureType) ?? "none"
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
     }
 }
 
@@ -266,9 +383,69 @@ final class LightweightGameAI {
             ambientLight = 600; sunLight = 920
         }
 
-        // 4. Generate Memorable World Title
+        // 4. Village & Settlement Architecture Extraction
+        var hasVillages = false
+        var villageDensity: Float = 0.0
+        var villageStyle = "medieval"
+        var structureType = "none"
+
+        let settlementKeywords = [
+            "village", "villages", "town", "city", "settlement", "hamlet", "kingdom",
+            "houses", "cottage", "cabins", "castle", "fortress", "pyramid", "temple",
+            "ruins", "civilization", "colony", "buildings", "dwellings", "camp", "outpost", "spire"
+        ]
+
+        if settlementKeywords.contains(where: { clean.contains($0) }) {
+            hasVillages = true
+            structureType = "village"
+            icon = "house.lodge.fill"
+
+            // Density extraction: "full of villages", "everywhere", "dense", "many", "lots of", "infinite"
+            if clean.contains("full of") || clean.contains("everywhere") || clean.contains("dense") || clean.contains("many") || clean.contains("lots of") || clean.contains("all over") || clean.contains("infinite villages") {
+                villageDensity = 0.85
+            } else {
+                villageDensity = 0.50
+            }
+
+            // Style extraction
+            if clean.contains("desert") || clean.contains("sand") || clean.contains("dune") || clean.contains("pyramid") {
+                villageStyle = "desert"
+                if clean.contains("pyramid") { structureType = "pyramid" }
+                icon = "building.columns.fill"
+            } else if clean.contains("castle") || clean.contains("fortress") || clean.contains("stone") || clean.contains("kingdom") {
+                villageStyle = "stone"
+                structureType = "castle"
+                icon = "shield.fill"
+            } else if clean.contains("ruin") || clean.contains("abandoned") || clean.contains("ancient") || clean.contains("decay") {
+                villageStyle = "ruins"
+                structureType = "ruins"
+                icon = "building.columns.fill"
+            } else if clean.contains("cyber") || clean.contains("neon") || clean.contains("alien") || clean.contains("future") {
+                villageStyle = "cyber"
+                structureType = "village"
+                icon = "sparkles"
+            } else {
+                villageStyle = "medieval"
+                structureType = "village"
+            }
+
+            // For village worlds, make terrain rolling and accessible so buildings sit smoothly
+            if baseType == .standard {
+                baseHeight = 6.0
+                heightVariance = 5.0
+                frequency = 0.02
+                hasTrees = true
+                treeStyle = "oak"
+                waterLvl = 4
+            }
+        }
+
+        // 5. Generate Memorable World Title
         let title = synthesizeWorldTitle(from: prompt, baseType: baseType)
-        let summary = "Custom \(baseType.displayName) with \(surface.fullName) surface, \(deep.fullName) crust, and \(hasTrees ? "\(treeStyle) trees" : "barren terrain")."
+        var summary = "Custom \(baseType.displayName) with \(surface.fullName) surface, \(deep.fullName) crust, and \(hasTrees ? "\(treeStyle) trees" : "barren terrain")."
+        if hasVillages {
+            summary = "Populated with sprawling procedural \(villageStyle) village settlements, houses with glass windows and pitched roofs, stone watchtowers, and connecting pathways."
+        }
 
         return CustomWorldType(
             name: title,
@@ -295,7 +472,11 @@ final class LightweightGameAI {
             fogGreen: fogG,
             fogBlue: fogB,
             ambientIntensity: ambientLight,
-            sunIntensity: sunLight
+            sunIntensity: sunLight,
+            hasVillages: hasVillages,
+            villageDensity: villageDensity,
+            villageStyle: villageStyle,
+            structureType: structureType
         )
     }
 
@@ -323,19 +504,31 @@ final class LightweightGameAI {
         var featureStyleRaw = "classic"
         var role = "AI Crafted Adventurer"
 
-        if clean.contains("visor") || clean.contains("knight") || clean.contains("armor") || clean.contains("paladin") {
+        if clean.contains("villager") || clean.contains("farmer") || clean.contains("merchant") || clean.contains("peasant") || clean.contains("baker") || clean.contains("blacksmith") {
+            featureStyleRaw = "villagerRobe"
+            role = "Village Inhabitant"
+        } else if clean.contains("king") || clean.contains("queen") || clean.contains("crown") || clean.contains("monarch") || clean.contains("emperor") || clean.contains("prince") || clean.contains("princess") {
+            featureStyleRaw = "crown"
+            role = "Imperial Sovereign"
+        } else if clean.contains("pirate") || clean.contains("corsair") || clean.contains("buccaneer") || clean.contains("eyepatch") || clean.contains("sailor") || clean.contains("captain") {
+            featureStyleRaw = "pirateEyepatch"
+            role = "High Seas Corsair"
+        } else if clean.contains("gamer") || clean.contains("headphone") || clean.contains("streamer") || clean.contains("hoodie") || clean.contains("boy") || clean.contains("girl") || clean.contains("teen") {
+            featureStyleRaw = "headphones"
+            role = "Pro Streamer"
+        } else if clean.contains("visor") || clean.contains("knight") || clean.contains("armor") || clean.contains("paladin") || clean.contains("crusader") || clean.contains("guard") || clean.contains("soldier") {
             featureStyleRaw = "visor"
             role = "Armored Vanguard"
-        } else if clean.contains("cyber") || clean.contains("robot") || clean.contains("android") || clean.contains("synth") || clean.contains("mech") {
+        } else if clean.contains("cyber") || clean.contains("robot") || clean.contains("android") || clean.contains("synth") || clean.contains("mech") || clean.contains("cyborg") {
             featureStyleRaw = "cybernetic"
             role = "Cybernetic Agent"
-        } else if clean.contains("ninja") || clean.contains("assassin") || clean.contains("shadow") || clean.contains("stealth") || clean.contains("mask") {
+        } else if clean.contains("ninja") || clean.contains("assassin") || clean.contains("shadow") || clean.contains("stealth") || clean.contains("mask") || clean.contains("samurai") || clean.contains("shinobi") {
             featureStyleRaw = "ninjaMask"
             role = "Shadow Shinobi"
-        } else if clean.contains("space") || clean.contains("astronaut") || clean.contains("cosmonaut") || clean.contains("cosmic") {
+        } else if clean.contains("space") || clean.contains("astronaut") || clean.contains("cosmonaut") || clean.contains("cosmic") || clean.contains("nasa") {
             featureStyleRaw = "spaceVisor"
             role = "Deep Space Explorer"
-        } else if clean.contains("wizard") || clean.contains("mage") || clean.contains("sorcerer") || clean.contains("witch") || clean.contains("spell") {
+        } else if clean.contains("wizard") || clean.contains("mage") || clean.contains("sorcerer") || clean.contains("witch") || clean.contains("spell") || clean.contains("warlock") {
             featureStyleRaw = "wizardPoint"
             role = "Arcane Spellsinger"
         } else if clean.contains("horn") || clean.contains("viking") || clean.contains("demon") || clean.contains("beast") || clean.contains("barbarian") {
@@ -344,7 +537,7 @@ final class LightweightGameAI {
         } else if clean.contains("hood") || clean.contains("arctic") || clean.contains("snow") || clean.contains("fur") || clean.contains("ranger") {
             featureStyleRaw = "furHood"
             role = "Wilderness Ranger"
-        } else if clean.contains("miner") || clean.contains("spelunk") || clean.contains("lamp") {
+        } else if clean.contains("miner") || clean.contains("spelunk") || clean.contains("lamp") || clean.contains("firefighter") || clean.contains("builder") {
             featureStyleRaw = "minerLamp"
             role = "Deep Spelunker"
         }
@@ -356,6 +549,30 @@ final class LightweightGameAI {
         var legsHex = "#1F2D3D"  // dark navy
         var accentHex = "#F4C430" // gold
         var eyeHex = "#3273DC"   // bright blue
+
+        // Detect Special Character Archetypes
+        if clean.contains("creeper") {
+            skinHex = "#4BAE4F"; hairHex = "#2E7D32"; torsoHex = "#388E3C"; legsHex = "#1B5E20"; accentHex = "#000000"; eyeHex = "#000000"
+            role = "Overworld Creeper"
+        } else if clean.contains("ender") || clean.contains("void") {
+            skinHex = "#121214"; hairHex = "#0D0D10"; torsoHex = "#1A1A1E"; legsHex = "#0E0E12"; accentHex = "#CC00FF"; eyeHex = "#CC00FF"
+            role = "Ender Voidwalker"
+        } else if clean.contains("villager") || clean.contains("farmer") {
+            skinHex = "#C68A5E"; hairHex = "#4A2E1B"; torsoHex = "#5E3B20"; legsHex = "#3E2512"; accentHex = "#2ECC71"; eyeHex = "#2ECC71"
+        } else if clean.contains("king") || clean.contains("queen") || clean.contains("royal") {
+            skinHex = "#F5D6C6"; hairHex = "#E4BE67"; torsoHex = "#7A1C1C"; legsHex = "#1F232A"; accentHex = "#FFD700"
+        } else if clean.contains("pirate") || clean.contains("captain") {
+            skinHex = "#D8A882"; hairHex = "#1A1A1A"; torsoHex = "#8B1E1E"; legsHex = "#1C1C1C"; accentHex = "#D4AF37"
+        } else if clean.contains("doctor") || clean.contains("medic") || clean.contains("nurse") {
+            torsoHex = "#FFFFFF"; legsHex = "#34495E"; accentHex = "#E74C3C"
+            role = "Field Medic"
+        } else if clean.contains("police") || clean.contains("cop") {
+            torsoHex = "#1A365D"; legsHex = "#0F172A"; accentHex = "#F59E0B"
+            role = "Law Enforcement"
+        } else if clean.contains("firefighter") {
+            torsoHex = "#D97706"; legsHex = "#1E293B"; accentHex = "#FEF08A"
+            role = "Rescue Firefighter"
+        }
 
         // Detect skin tone
         if clean.contains("pale") || clean.contains("white skin") || clean.contains("fair") {
@@ -546,6 +763,29 @@ final class LightweightGameAI {
             } else if featureStyle == "minerLamp" {
                 fill(CGRect(x: 11, y: 8, width: 2, height: 2), color: .yellow)
                 fill(CGRect(x: 8, y: 9, width: 8, height: 1), color: .darkGray)
+            } else if featureStyle == "crown" {
+                // Golden crown with ruby & sapphire jewels
+                fill(CGRect(x: 8, y: 7, width: 8, height: 2), color: .yellow)
+                fill(CGRect(x: 8, y: 6, width: 2, height: 1), color: .yellow)
+                fill(CGRect(x: 11, y: 6, width: 2, height: 1), color: .yellow)
+                fill(CGRect(x: 14, y: 6, width: 2, height: 1), color: .yellow)
+                fill(CGRect(x: 9, y: 7, width: 1, height: 1), color: .red)
+                fill(CGRect(x: 12, y: 7, width: 1, height: 1), color: .blue)
+                fill(CGRect(x: 14, y: 7, width: 1, height: 1), color: .green)
+            } else if featureStyle == "pirateEyepatch" {
+                // Diagonal black strap and eyepatch over right eye
+                fill(CGRect(x: 8, y: 10, width: 8, height: 1), color: .black)
+                fill(CGRect(x: 12, y: 11, width: 3, height: 3), color: .black)
+            } else if featureStyle == "headphones" {
+                // Gaming headphones with colored ear cups on sides and band across top
+                fill(CGRect(x: 7, y: 6, width: 10, height: 2), color: .darkGray)
+                fill(CGRect(x: 7, y: 11, width: 2, height: 3), color: accentColor)
+                fill(CGRect(x: 15, y: 11, width: 2, height: 3), color: accentColor)
+            } else if featureStyle == "villagerRobe" {
+                // Prominent unibrow and emerald robe pendant
+                fill(CGRect(x: 9, y: 11, width: 6, height: 1), color: hairColor)
+                fill(CGRect(x: 11, y: 12, width: 2, height: 2), color: skinTone)
+                fill(CGRect(x: 22, y: 20, width: 4, height: 4), color: accentColor)
             }
 
             // --- 2. TORSO (64x64 layout) ---

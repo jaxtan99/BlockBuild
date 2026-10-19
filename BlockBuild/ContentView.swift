@@ -1017,6 +1017,7 @@ struct SavedWorldsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var worldNameInput: String = ""
     @State private var selectedWorldType: WorldType = .standard
+    @State private var localShowingAIStudio = false
 
     var body: some View {
         NavigationStack {
@@ -1053,8 +1054,7 @@ struct SavedWorldsSheet: View {
                 Section("Create New World") {
                     VStack(alignment: .leading, spacing: 10) {
                         Button {
-                            dismiss()
-                            showingAIStudioSheet = true
+                            localShowingAIStudio = true
                         } label: {
                             HStack {
                                 ZStack {
@@ -1279,6 +1279,9 @@ struct SavedWorldsSheet: View {
             .onAppear {
                 worldNameInput = ""
             }
+            .sheet(isPresented: $localShowingAIStudio) {
+                AIStudioSheet(world: world)
+            }
         }
     }
 }
@@ -1294,120 +1297,234 @@ struct MainMenuView: View {
     @Binding var showingAIStudioSheet: Bool
 
     var body: some View {
-        ZStack {
-            // Panoramic 3D Voxel World Scene in background
-            VoxelSceneView(world: world)
-                .ignoresSafeArea()
-                .overlay(Color.black.opacity(0.48))
+        GeometryReader { geo in
+            ZStack {
+                // Panoramic 3D Voxel World Scene in background
+                VoxelSceneView(world: world)
+                    .ignoresSafeArea()
+                    .overlay(Color.black.opacity(0.48))
 
-            // Main Menu Content
-            VStack(spacing: 16) {
+                let isLandscape = geo.size.width >= 540
+                let isCompactHeight = geo.size.height < 420
+
+                ViewThatFits(in: .vertical) {
+                    // 1. Primary layout (fits cleanly on all iPhones & iPads without scrolling)
+                    menuLayout(geo: geo, isLandscape: isLandscape, isCompactHeight: isCompactHeight)
+
+                    // 2. Fallback scrollable layout if extreme accessibility Dynamic Type or micro-window
+                    ScrollView(.vertical, showsIndicators: false) {
+                        menuLayout(geo: geo, isLandscape: isLandscape, isCompactHeight: isCompactHeight)
+                            .frame(minHeight: geo.size.height)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func menuLayout(geo: GeometryProxy, isLandscape: Bool, isCompactHeight: Bool) -> some View {
+        if isLandscape {
+            landscapeLayout(geo: geo, isCompactHeight: isCompactHeight)
+        } else {
+            portraitLayout(geo: geo, isCompactHeight: isCompactHeight)
+        }
+    }
+
+    private func landscapeLayout(geo: GeometryProxy, isCompactHeight: Bool) -> some View {
+        HStack(alignment: .center, spacing: max(20, geo.size.width * 0.05)) {
+            // Left Column: Logo Title, Equipped Skin Pill, Feature Tags
+            VStack(alignment: .leading, spacing: isCompactHeight ? 10 : 14) {
                 Spacer()
 
                 // Retro Title Banner
-                VStack(spacing: 4) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text("BLOCKBUILD")
-                        .font(.system(size: 40, weight: .black, design: .monospaced))
+                        .font(.system(size: isCompactHeight ? 32 : 38, weight: .black, design: .monospaced))
                         .foregroundColor(.green)
                         .shadow(color: .black, radius: 4, x: 2, y: 3)
+                        .minimumScaleFactor(0.75)
+                        .lineLimit(1)
 
                     Text("A RETRO VOXEL SANDBOX")
-                        .font(.system(size: 11, weight: .black, design: .monospaced))
+                        .font(.system(size: isCompactHeight ? 9.5 : 11, weight: .black, design: .monospaced))
                         .foregroundColor(.yellow)
-                        .tracking(3)
+                        .tracking(2.5)
                         .shadow(color: .black, radius: 2)
+                        .lineLimit(1)
                 }
 
                 // Equipped Skin Preview Pill
-                Button {
-                    showingSkinsSheet = true
-                } label: {
-                    HStack(spacing: 10) {
-                        if let custom = world.activeCustomSkin {
-                            CharacterAvatarPreview(customSkin: custom, size: 28)
-                        } else {
-                            CharacterAvatarPreview(skin: world.selectedSkin, size: 28)
-                        }
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text("SKIN: \((world.activeCustomSkin?.name ?? world.selectedSkin.displayName).uppercased())")
-                                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                .foregroundColor(.white)
-                            Text("Tap to change skin")
-                                .font(.system(size: 9, weight: .medium, design: .monospaced))
-                                .foregroundColor(.cyan)
-                        }
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundColor(.white.opacity(0.7))
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 7)
-                    .background(Color.black.opacity(0.65))
-                    .cornerRadius(20)
-                    .overlay(
-                        Capsule().stroke(Color.white.opacity(0.3), lineWidth: 1)
-                    )
+                skinPreviewPill(compact: isCompactHeight)
+
+                // Feature Highlights
+                VStack(alignment: .leading, spacing: 5) {
+                    featureBadge(icon: "cube.fill", text: "Infinite Voxel Worlds", color: .green)
+                    featureBadge(icon: "sparkles", text: "AI World & Skin Studio", color: .purple)
+                    featureBadge(icon: "person.2.fill", text: "Nearby Co-Op & World Sync", color: .pink)
                 }
+                .padding(.top, 4)
 
                 Spacer()
-
-                // Main Menu Action Grid
-                VStack(spacing: 10) {
-                    MainMenuButton(
-                        title: "PLAY WORLDS",
-                        subtitle: "Create, Load & Explore Worlds",
-                        icon: "globe.americas.fill",
-                        color: .green
-                    ) {
-                        showingWorldsSheet = true
-                    }
-
-                    MainMenuButton(
-                        title: "AI STUDIO",
-                        subtitle: "Create Worlds & Skins with AI",
-                        icon: "sparkles",
-                        color: .purple
-                    ) {
-                        showingAIStudioSheet = true
-                    }
-
-                    MainMenuButton(
-                        title: "MULTIPLAYER",
-                        subtitle: world.connectedPlayerNames.isEmpty ? "Local Wi-Fi Co-Op" : "\(world.connectedPlayerNames.count) Connected",
-                        icon: "person.2.wave.2.fill",
-                        color: .pink
-                    ) {
-                        showingMultiplayerSheet = true
-                    }
-
-                    MainMenuButton(
-                        title: "SETTINGS",
-                        subtitle: "Controls, Sensitivity & Audio",
-                        icon: "gearshape.fill",
-                        color: .indigo
-                    ) {
-                        showingSettingsSheet = true
-                    }
-                }
-                .frame(maxWidth: 440)
-
-                Spacer()
-
-                // Footer
-                HStack(spacing: 12) {
-                    Text("Infinite Worlds")
-                    Text("•")
-                    Text("Full Block Water")
-                    Text("•")
-                    Text("Skin Syncing")
-                    Text("•")
-                    Text("Local Co-Op")
-                }
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                .foregroundColor(.white.opacity(0.6))
-                .padding(.bottom, 10)
             }
-            .padding(.horizontal, 24)
+            .frame(maxWidth: min(340, geo.size.width * 0.44), alignment: .leading)
+
+            // Right Column: Action Buttons
+            VStack(spacing: isCompactHeight ? 7.5 : 10) {
+                Spacer()
+
+                MainMenuButton(
+                    title: "PLAY WORLDS",
+                    subtitle: "Create, Load & Explore Worlds",
+                    icon: "globe.americas.fill",
+                    color: .green,
+                    compact: isCompactHeight
+                ) {
+                    showingWorldsSheet = true
+                }
+
+                MainMenuButton(
+                    title: "AI STUDIO",
+                    subtitle: "Create Worlds & Skins with AI",
+                    icon: "sparkles",
+                    color: .purple,
+                    compact: isCompactHeight
+                ) {
+                    showingAIStudioSheet = true
+                }
+
+                MainMenuButton(
+                    title: "MULTIPLAYER",
+                    subtitle: world.connectedPlayerNames.isEmpty ? "Local Wi-Fi Co-Op" : "\(world.connectedPlayerNames.count) Connected",
+                    icon: "person.2.wave.2.fill",
+                    color: .pink,
+                    compact: isCompactHeight
+                ) {
+                    showingMultiplayerSheet = true
+                }
+
+                MainMenuButton(
+                    title: "SETTINGS",
+                    subtitle: "Textures, Sensitivity & Controls",
+                    icon: "gearshape.fill",
+                    color: .indigo,
+                    compact: isCompactHeight
+                ) {
+                    showingSettingsSheet = true
+                }
+
+                Spacer()
+            }
+            .frame(maxWidth: min(360, geo.size.width * 0.48))
+        }
+        .padding(.leading, max(24, geo.safeAreaInsets.leading + 10))
+        .padding(.trailing, max(24, geo.safeAreaInsets.trailing + 10))
+        .padding(.top, max(8, geo.safeAreaInsets.top))
+        .padding(.bottom, max(8, geo.safeAreaInsets.bottom))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func portraitLayout(geo: GeometryProxy, isCompactHeight: Bool) -> some View {
+        VStack(spacing: 12) {
+            Spacer()
+
+            // Retro Title Banner
+            VStack(spacing: 4) {
+                Text("BLOCKBUILD")
+                    .font(.system(size: 34, weight: .black, design: .monospaced))
+                    .foregroundColor(.green)
+                    .shadow(color: .black, radius: 4, x: 2, y: 3)
+                    .minimumScaleFactor(0.7)
+                    .lineLimit(1)
+
+                Text("A RETRO VOXEL SANDBOX")
+                    .font(.system(size: 10.5, weight: .black, design: .monospaced))
+                    .foregroundColor(.yellow)
+                    .tracking(2.5)
+                    .shadow(color: .black, radius: 2)
+            }
+
+            skinPreviewPill(compact: false)
+
+            Spacer()
+
+            VStack(spacing: 9) {
+                MainMenuButton(title: "PLAY WORLDS", subtitle: "Create, Load & Explore Worlds", icon: "globe.americas.fill", color: .green) {
+                    showingWorldsSheet = true
+                }
+                MainMenuButton(title: "AI STUDIO", subtitle: "Create Worlds & Skins with AI", icon: "sparkles", color: .purple) {
+                    showingAIStudioSheet = true
+                }
+                MainMenuButton(title: "MULTIPLAYER", subtitle: world.connectedPlayerNames.isEmpty ? "Local Wi-Fi Co-Op" : "\(world.connectedPlayerNames.count) Connected", icon: "person.2.wave.2.fill", color: .pink) {
+                    showingMultiplayerSheet = true
+                }
+                MainMenuButton(title: "SETTINGS", subtitle: "Textures, Sensitivity & Controls", icon: "gearshape.fill", color: .indigo) {
+                    showingSettingsSheet = true
+                }
+            }
+            .frame(maxWidth: 380)
+
+            Spacer()
+
+            // Footer
+            HStack(spacing: 8) {
+                Text("Infinite Worlds")
+                Text("•")
+                Text("AI Studio")
+                Text("•")
+                Text("Local Co-Op")
+            }
+            .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+            .foregroundColor(.white.opacity(0.6))
+            .padding(.bottom, 6)
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, max(10, geo.safeAreaInsets.top))
+        .padding(.bottom, max(10, geo.safeAreaInsets.bottom))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func skinPreviewPill(compact: Bool) -> some View {
+        Button {
+            showingSkinsSheet = true
+        } label: {
+            HStack(spacing: 8) {
+                if let custom = world.activeCustomSkin {
+                    CharacterAvatarPreview(customSkin: custom, size: compact ? 22 : 26)
+                } else {
+                    CharacterAvatarPreview(skin: world.selectedSkin, size: compact ? 22 : 26)
+                }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("SKIN: \((world.activeCustomSkin?.name ?? world.selectedSkin.displayName).uppercased())")
+                        .font(.system(size: compact ? 9.5 : 10.5, weight: .bold, design: .monospaced))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                    Text("Tap to change skin")
+                        .font(.system(size: 8.5, weight: .medium, design: .monospaced))
+                        .foregroundColor(.cyan)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(.white.opacity(0.7))
+            }
+            .padding(.horizontal, compact ? 10 : 12)
+            .padding(.vertical, compact ? 5 : 6)
+            .background(Color.black.opacity(0.65))
+            .cornerRadius(18)
+            .overlay(
+                Capsule().stroke(Color.white.opacity(0.3), lineWidth: 1)
+            )
+        }
+    }
+
+    private func featureBadge(icon: String, text: String, color: Color) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 9, weight: .bold))
+                .foregroundColor(color)
+                .frame(width: 14)
+            Text(text)
+                .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                .foregroundColor(.white.opacity(0.75))
         }
     }
 }
@@ -1417,36 +1534,39 @@ struct MainMenuButton: View {
     let subtitle: String?
     let icon: String
     let color: Color
+    var compact: Bool = false
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 12) {
+            HStack(spacing: compact ? 10 : 12) {
                 Image(systemName: icon)
-                    .font(.system(size: 18, weight: .bold))
+                    .font(.system(size: compact ? 15 : 17, weight: .bold))
                     .foregroundColor(.white)
-                    .frame(width: 30)
+                    .frame(width: compact ? 24 : 28)
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 1.5) {
                     Text(title)
-                        .font(.system(size: 13, weight: .black, design: .monospaced))
+                        .font(.system(size: compact ? 12 : 13, weight: .black, design: .monospaced))
                         .foregroundColor(.white)
+                        .lineLimit(1)
 
                     if let sub = subtitle {
                         Text(sub)
-                            .font(.system(size: 9, weight: .medium, design: .monospaced))
-                            .foregroundColor(.white.opacity(0.8))
+                            .font(.system(size: compact ? 8.5 : 9, weight: .medium, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.82))
+                            .lineLimit(1)
                     }
                 }
 
                 Spacer()
 
                 Image(systemName: "arrow.right.circle.fill")
-                    .font(.system(size: 13, weight: .bold))
+                    .font(.system(size: compact ? 11 : 13, weight: .bold))
                     .foregroundColor(.white.opacity(0.75))
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
+            .padding(.horizontal, compact ? 12 : 14)
+            .padding(.vertical, compact ? 7.5 : 9.5)
             .background(
                 LinearGradient(
                     colors: [color.opacity(0.88), color.opacity(0.70)],
@@ -1454,12 +1574,12 @@ struct MainMenuButton: View {
                     endPoint: .bottomTrailing
                 )
             )
-            .cornerRadius(12)
+            .cornerRadius(11)
             .overlay(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: 11)
                     .stroke(Color.white.opacity(0.35), lineWidth: 1.5)
             )
-            .shadow(color: .black.opacity(0.4), radius: 4, y: 2)
+            .shadow(color: .black.opacity(0.4), radius: 3, y: 1.5)
         }
     }
 }
@@ -1506,6 +1626,7 @@ struct CharacterSkinsSheet: View {
     @ObservedObject var world: VoxelWorld
     @Binding var showingAIStudioSheet: Bool
     @Environment(\.dismiss) private var dismiss
+    @State private var localShowingAIStudio = false
 
     let columns = [
         GridItem(.adaptive(minimum: 155), spacing: 12)
@@ -1552,8 +1673,7 @@ struct CharacterSkinsSheet: View {
 
                     // AI Skin Generator Button
                     Button {
-                        dismiss()
-                        showingAIStudioSheet = true
+                        localShowingAIStudio = true
                     } label: {
                         HStack {
                             ZStack {
@@ -1723,6 +1843,9 @@ struct CharacterSkinsSheet: View {
                     .font(.system(size: 13, weight: .bold, design: .monospaced))
                 }
             }
+            .sheet(isPresented: $localShowingAIStudio) {
+                AIStudioSheet(world: world)
+            }
         }
     }
 }
@@ -1873,7 +1996,13 @@ struct TexturePacksSheet: View {
     }
 }
 
-// MARK: - In-Game Settings Sheet
+enum SettingsSubsheet: Identifiable {
+    case skins
+    case texturePacks
+    case aiStudio
+
+    var id: Int { hashValue }
+}
 
 struct InGameSettingsSheet: View {
     @ObservedObject var world: VoxelWorld
@@ -1882,6 +2011,7 @@ struct InGameSettingsSheet: View {
     @Binding var showingTexturePacksSheet: Bool
     @Binding var showingAIStudioSheet: Bool
     @Environment(\.dismiss) private var dismiss
+    @State private var activeSubsheet: SettingsSubsheet? = nil
 
     var body: some View {
         NavigationStack {
@@ -1921,7 +2051,7 @@ struct InGameSettingsSheet: View {
 
                 Section {
                     Button {
-                        showingSkinsSheet = true
+                        activeSubsheet = .skins
                     } label: {
                         HStack {
                             if let custom = world.activeCustomSkin {
@@ -1944,7 +2074,7 @@ struct InGameSettingsSheet: View {
                     }
 
                     Button {
-                        showingTexturePacksSheet = true
+                        activeSubsheet = .texturePacks
                     } label: {
                         HStack {
                             ZStack {
@@ -1970,7 +2100,7 @@ struct InGameSettingsSheet: View {
                     }
 
                     Button {
-                        showingAIStudioSheet = true
+                        activeSubsheet = .aiStudio
                     } label: {
                         HStack {
                             ZStack {
@@ -2179,6 +2309,19 @@ struct InGameSettingsSheet: View {
                         dismiss()
                     }
                     .font(.system(size: 13, weight: .bold, design: .monospaced))
+                }
+            }
+            .sheet(item: $activeSubsheet) { sheet in
+                switch sheet {
+                case .skins:
+                    CharacterSkinsSheet(world: world, showingAIStudioSheet: Binding(
+                        get: { activeSubsheet == .aiStudio },
+                        set: { if $0 { activeSubsheet = .aiStudio } }
+                    ))
+                case .texturePacks:
+                    TexturePacksSheet(world: world)
+                case .aiStudio:
+                    AIStudioSheet(world: world)
                 }
             }
         }

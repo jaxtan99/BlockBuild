@@ -8,6 +8,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+- **Procedural AI Villages & Settlements**:
+  - Added procedural village generation to `CustomWorldType` and `LightweightGameAI`.
+  - Prompts describing settlements (e.g., *"make a world full of villages"*, *"kingdom of castles and towers"*, *"desert oasis town"*) now configure `hasVillages = true`, set village density up to 85%, and generate themed architectures:
+    - **Cottages**: 5x5 timber-framed cottages with glass windows, wood doors, plank floors, and pitched roofs.
+    - **Watchtowers**: 4x4 multi-story lookout towers with battlements and ladders.
+    - **Village Wells**: Central stone wells with corner posts, roof canopies, and water basins.
+    - **Connecting Pathways**: Cobblestone and gravel path networks connecting buildings across terrain.
+- **Expanded AI Skin Synthesizer Archetypes**:
+  - Expanded `synthesizeSkin` to recognize rich character archetypes: Villagers (earth-tone robes, emerald belts), Monarchs (gem-studded gold crowns, royal capes), Pirates (eye patches, leather vests), Gamers (neon over-ear headphones, graphic tees), Medics, Police, Firefighters, and Monsters.
+  - Added procedural pixel art drawing for accessories: crowns, eye patches, headphones, and villager robes.
+- **Multiplayer Custom World & Skin Synchronization**:
+  - `MultiplayerPacket` protocol extended to carry `customWorldType` and `customSkin` payloads over MultipeerConnectivity.
+  - Joining a peer host automatically downloads and persists their AI world generation type into the client's local library and applies custom sky/fog/lighting atmosphere.
+  - Remote player avatars dynamically receive and apply custom AI skin textures over local Wi-Fi.
+
+### Fixed
+- **Main Menu Responsive Scaling**:
+  - Re-engineered `MainMenuView` with `GeometryReader`, adaptive safe-area insets (notch / Dynamic Island), responsive 2-column landscape layout, and scrollable fallback to eliminate button or banner clipping across all iPhone and iPad resolutions.
+- **Settings Subsheet Stacking**:
+  - Resolved glitch where Texture Packs, AI Studio, or Character Skins would not open until Settings was dismissed. Subsheets now present immediately on top of `InGameSettingsSheet`.
+
+
 ---
 
 ## [1.7.0] - 2026-10-19
