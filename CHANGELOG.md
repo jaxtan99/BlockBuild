@@ -9,16 +9,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ## [Unreleased]
 
 ### Added
-- **Procedural AI Villages & Settlements**:
-  - Added procedural village generation to `CustomWorldType` and `LightweightGameAI`.
-  - Prompts describing settlements (e.g., *"make a world full of villages"*, *"kingdom of castles and towers"*, *"desert oasis town"*) now configure `hasVillages = true`, set village density up to 85%, and generate themed architectures:
-    - **Cottages**: 5x5 timber-framed cottages with glass windows, wood doors, plank floors, and pitched roofs.
-    - **Watchtowers**: 4x4 multi-story lookout towers with battlements and ladders.
-    - **Village Wells**: Central stone wells with corner posts, roof canopies, and water basins.
-    - **Connecting Pathways**: Cobblestone and gravel path networks connecting buildings across terrain.
-- **Expanded AI Skin Synthesizer Archetypes**:
-  - Expanded `synthesizeSkin` to recognize rich character archetypes: Villagers (earth-tone robes, emerald belts), Monarchs (gem-studded gold crowns, royal capes), Pirates (eye patches, leather vests), Gamers (neon over-ear headphones, graphic tees), Medics, Police, Firefighters, and Monsters.
-  - Added procedural pixel art drawing for accessories: crowns, eye patches, headphones, and villager robes.
+- **Guaranteed Spawn Village Settlement & Infinite Procedural Hamlets**:
+  - Prompts describing villages or settlements (e.g. *"make a world full of villages"*, *"dense kingdom of houses and towers"*) guarantee an authentic, picturesque town settlement right at spawn:
+    - **Chunk (0,0) Town Square Plaza**: Level paved plaza, central water well/fountain with canopy, 4 street lamp posts, benches, and connecting cardinal roads.
+    - **Chunk (0,1) Grand Town Hall**: 7x7 stately council hall with double-door entrance, glass lookout windows, pitched roof, and interior meeting chamber.
+    - **Chunk (1,0) Residential Cottages**: Cozy timber-framed houses with wood doors, glass windows, and gabled roofs.
+    - **Chunk (-1,0) West Guard Watchtower**: Tall 8-meter stone tower with battlements, crenellations, and glass slits.
+    - **Chunk (0,-1) South Farmland & Granary**: Irrigated water canals, tilled crops, and storage granary.
+  - **Terrain Flattening & Ground Leveling**: Automatically clears air from building floors up to roof peaks and solidifies foundations below to prevent structures from floating or being submerged in terrain.
+  - **Flora Suppression**: Suppresses tree generation in village lots to prevent tree trunks or foliage from clipping through buildings or town squares.
+  - **Immediate Spawn Placement**: Spawns the player right on the Town Square plaza facing North directly toward the Town Hall and central fountain.
+  - **Persistent Custom Worlds**: `SavedWorld` now encodes and restores `customWorldType`, ensuring re-opened custom worlds retain their full terrain parameters, sky colors, and atmosphere.
+- **First-Person Animated Arm & 3D Skin Visibility**:
+  - Added visible first-person player arm textured with the player's active custom skin and holding a miniature model of the selected block.
+  - Arm swings dynamically upon placing or breaking targeted blocks.
+- **Third-Person Camera Perspective (F5 Views)**:
+  - Added dedicated top HUD bar perspective toggle button cycling through **1st View**, **3rd Back**, and **3rd Front**.
+  - Local 3D player avatar rendered in third-person perspectives showing custom skins, accessories, and smooth walking limb animations (legs and arms swinging in counter-phase).
+- **Expanded AI Skin Synthesizer & Accessories**:
+  - Expanded `synthesizeSkin` to recognize and render **cat ears**, **sunglasses / shades**, and **superhero masks**, alongside crowns, pirate eye patches, headphones, and villager robes.
+  - Deep semantic vocabulary expansion with over 50 settlement synonyms and density modifiers (supporting up to 90% village density).
 - **Multiplayer Custom World & Skin Synchronization**:
   - `MultiplayerPacket` protocol extended to carry `customWorldType` and `customSkin` payloads over MultipeerConnectivity.
   - Joining a peer host automatically downloads and persists their AI world generation type into the client's local library and applies custom sky/fog/lighting atmosphere.

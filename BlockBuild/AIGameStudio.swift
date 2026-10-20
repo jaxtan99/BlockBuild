@@ -390,9 +390,12 @@ final class LightweightGameAI {
         var structureType = "none"
 
         let settlementKeywords = [
-            "village", "villages", "town", "city", "settlement", "hamlet", "kingdom",
-            "houses", "cottage", "cabins", "castle", "fortress", "pyramid", "temple",
-            "ruins", "civilization", "colony", "buildings", "dwellings", "camp", "outpost", "spire"
+            "village", "villages", "vilage", "vilages", "town", "towns", "city", "cities", "settlement", "settlements",
+            "hamlet", "hamlets", "kingdom", "kingdoms", "houses", "house", "cottage", "cottages", "cabins", "cabin",
+            "castle", "castles", "fortress", "pyramid", "pyramids", "temple", "temples", "ruins", "ruin",
+            "civilization", "civilisation", "colony", "colonies", "buildings", "dwellings", "camp", "camps",
+            "outpost", "outposts", "spire", "spires", "peopled", "populated", "suburb", "neighborhood", "community",
+            "empire", "stronghold", "bastion", "manor", "palace", "bazaar", "market", "huts", "shacks", "lodges"
         ]
 
         if settlementKeywords.contains(where: { clean.contains($0) }) {
@@ -400,27 +403,28 @@ final class LightweightGameAI {
             structureType = "village"
             icon = "house.lodge.fill"
 
-            // Density extraction: "full of villages", "everywhere", "dense", "many", "lots of", "infinite"
-            if clean.contains("full of") || clean.contains("everywhere") || clean.contains("dense") || clean.contains("many") || clean.contains("lots of") || clean.contains("all over") || clean.contains("infinite villages") {
-                villageDensity = 0.85
+            // Density extraction: "full of villages", "everywhere", "dense", "many", "lots of", "infinite", "tons"
+            let highDensityKeywords = ["full", "everywhere", "dense", "density", "many", "lots", "all over", "infinite", "pack", "packed", "tons", "crowded", "overflowing", "plenty", "max", "maximum", "billion", "million"]
+            if highDensityKeywords.contains(where: { clean.contains($0) }) {
+                villageDensity = 0.90
             } else {
-                villageDensity = 0.50
+                villageDensity = 0.65
             }
 
             // Style extraction
-            if clean.contains("desert") || clean.contains("sand") || clean.contains("dune") || clean.contains("pyramid") {
+            if clean.contains("desert") || clean.contains("sand") || clean.contains("dune") || clean.contains("pyramid") || clean.contains("oasis") || clean.contains("egypt") {
                 villageStyle = "desert"
                 if clean.contains("pyramid") { structureType = "pyramid" }
                 icon = "building.columns.fill"
-            } else if clean.contains("castle") || clean.contains("fortress") || clean.contains("stone") || clean.contains("kingdom") {
+            } else if clean.contains("castle") || clean.contains("fortress") || clean.contains("stone") || clean.contains("kingdom") || clean.contains("knights") || clean.contains("citadel") {
                 villageStyle = "stone"
                 structureType = "castle"
                 icon = "shield.fill"
-            } else if clean.contains("ruin") || clean.contains("abandoned") || clean.contains("ancient") || clean.contains("decay") {
+            } else if clean.contains("ruin") || clean.contains("abandoned") || clean.contains("ancient") || clean.contains("decay") || clean.contains("lost") || clean.contains("forgotten") {
                 villageStyle = "ruins"
                 structureType = "ruins"
                 icon = "building.columns.fill"
-            } else if clean.contains("cyber") || clean.contains("neon") || clean.contains("alien") || clean.contains("future") {
+            } else if clean.contains("cyber") || clean.contains("neon") || clean.contains("alien") || clean.contains("future") || clean.contains("sci-fi") || clean.contains("tech") {
                 villageStyle = "cyber"
                 structureType = "village"
                 icon = "sparkles"
@@ -432,7 +436,7 @@ final class LightweightGameAI {
             // For village worlds, make terrain rolling and accessible so buildings sit smoothly
             if baseType == .standard {
                 baseHeight = 6.0
-                heightVariance = 5.0
+                heightVariance = 4.0
                 frequency = 0.02
                 hasTrees = true
                 treeStyle = "oak"
@@ -441,10 +445,10 @@ final class LightweightGameAI {
         }
 
         // 5. Generate Memorable World Title
-        let title = synthesizeWorldTitle(from: prompt, baseType: baseType)
+        let title = synthesizeWorldTitle(from: prompt, baseType: baseType, hasVillages: hasVillages)
         var summary = "Custom \(baseType.displayName) with \(surface.fullName) surface, \(deep.fullName) crust, and \(hasTrees ? "\(treeStyle) trees" : "barren terrain")."
         if hasVillages {
-            summary = "Populated with sprawling procedural \(villageStyle) village settlements, houses with glass windows and pitched roofs, stone watchtowers, and connecting pathways."
+            summary = "Populated with sprawling procedural \(villageStyle) village settlements (\(Int(villageDensity * 100))% density), town hall, stone watchtower, houses with glass windows and pitched roofs, and connecting pathways."
         }
 
         return CustomWorldType(
@@ -480,15 +484,23 @@ final class LightweightGameAI {
         )
     }
 
-    private func synthesizeWorldTitle(from prompt: String, baseType: WorldType) -> String {
+    private func synthesizeWorldTitle(from prompt: String, baseType: WorldType, hasVillages: Bool) -> String {
         let words = prompt.components(separatedBy: CharacterSet.alphanumerics.inverted)
             .filter { $0.count > 2 }
             .map { $0.capitalized }
 
+        if hasVillages {
+            let settlementNouns = ["Settlement", "Township", "Kingdom", "Haven", "Colony", "Province", "Dominion", "Valley"]
+            if let firstInteresting = words.first(where: { !["with", "and", "the", "for", "that", "make", "world", "full", "lots", "many", "villages", "village", "like"].contains($0.lowercased()) }) {
+                return "\(firstInteresting) \(settlementNouns.randomElement() ?? "Township")"
+            }
+            return "Village \(settlementNouns.randomElement() ?? "Settlement")"
+        }
+
         let adjectives = ["Radiant", "Ancient", "Cosmic", "Mystic", "Shattered", "Verdant", "Obsidian", "Golden", "Neon", "Infinite", "Prismatic", "Abyssal"]
         let nouns = ["Dominion", "Expanse", "Sanctuary", "Wilds", "Realms", "Frontier", "Shores", "Peaks", "Isles", "Haven", "Caverns", "Valley"]
 
-        if let firstInteresting = words.first(where: { !["with", "and", "the", "for", "that"].contains($0.lowercased()) }) {
+        if let firstInteresting = words.first(where: { !["with", "and", "the", "for", "that", "make", "world"].contains($0.lowercased()) }) {
             return "\(firstInteresting) \(nouns.randomElement() ?? "World")"
         }
 
@@ -504,7 +516,16 @@ final class LightweightGameAI {
         var featureStyleRaw = "classic"
         var role = "AI Crafted Adventurer"
 
-        if clean.contains("villager") || clean.contains("farmer") || clean.contains("merchant") || clean.contains("peasant") || clean.contains("baker") || clean.contains("blacksmith") {
+        if clean.contains("cat") || clean.contains("neko") || clean.contains("kitty") || clean.contains("kitten") || clean.contains("feline") {
+            featureStyleRaw = "catEars"
+            role = "Neko Adventurer"
+        } else if clean.contains("sunglass") || clean.contains("glasses") || clean.contains("shades") || clean.contains("spectacles") || clean.contains("cool") {
+            featureStyleRaw = "sunglasses"
+            role = "Cool Operative"
+        } else if clean.contains("superhero") || clean.contains("hero") || clean.contains("batman") || clean.contains("spiderman") || clean.contains("avenger") || clean.contains("robin") || clean.contains("cape") {
+            featureStyleRaw = "superheroMask"
+            role = "Masked Hero"
+        } else if clean.contains("villager") || clean.contains("farmer") || clean.contains("merchant") || clean.contains("peasant") || clean.contains("baker") || clean.contains("blacksmith") {
             featureStyleRaw = "villagerRobe"
             role = "Village Inhabitant"
         } else if clean.contains("king") || clean.contains("queen") || clean.contains("crown") || clean.contains("monarch") || clean.contains("emperor") || clean.contains("prince") || clean.contains("princess") {
@@ -751,7 +772,23 @@ final class LightweightGameAI {
             fill(CGRect(x: 11, y: 14, width: 2, height: 1), color: mouthColor, noiseVar: 0)
 
             // Feature Style Overlays on Face
-            if featureStyle == "visor" || featureStyle == "spaceVisor" {
+            if featureStyle == "catEars" {
+                // Two cute cat ears on the hairline corners
+                fill(CGRect(x: 8, y: 6, width: 2, height: 2), color: hairColor)
+                fill(CGRect(x: 9, y: 7, width: 1, height: 1), color: accentColor)
+                fill(CGRect(x: 14, y: 6, width: 2, height: 2), color: hairColor)
+                fill(CGRect(x: 14, y: 7, width: 1, height: 1), color: accentColor)
+            } else if featureStyle == "sunglasses" {
+                // Dark sunglasses across eyes with reflective white shine
+                fill(CGRect(x: 8, y: 11, width: 8, height: 2), color: .black)
+                fill(CGRect(x: 9, y: 11, width: 1, height: 1), color: .white)
+                fill(CGRect(x: 13, y: 11, width: 1, height: 1), color: .white)
+            } else if featureStyle == "superheroMask" {
+                // Superhero mask around eyes
+                fill(CGRect(x: 8, y: 11, width: 8, height: 2), color: accentColor)
+                fill(CGRect(x: 10, y: 12, width: 1, height: 1), color: eyeColor)
+                fill(CGRect(x: 13, y: 12, width: 1, height: 1), color: eyeColor)
+            } else if featureStyle == "visor" || featureStyle == "spaceVisor" {
                 fill(CGRect(x: 9, y: 11, width: 6, height: 2), color: accentColor)
                 fill(CGRect(x: 10, y: 12, width: 4, height: 1), color: .white)
             } else if featureStyle == "cybernetic" {
@@ -1106,6 +1143,19 @@ struct AIStudioSheet: View {
                         Text(worldType.summary)
                             .font(.system(size: 11, design: .monospaced))
                             .foregroundColor(.white.opacity(0.85))
+
+                        if worldType.hasVillages {
+                            HStack(spacing: 6) {
+                                Image(systemName: "house.lodge.fill")
+                                Text("Village Settlement World • \(Int(worldType.villageDensity * 100))% Density (\(worldType.villageStyle.capitalized))")
+                            }
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.yellow.opacity(0.2))
+                            .foregroundColor(.yellow)
+                            .cornerRadius(6)
+                        }
 
                         // Block Preview Badges
                         HStack(spacing: 8) {

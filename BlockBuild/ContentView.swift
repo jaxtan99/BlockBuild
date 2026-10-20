@@ -337,7 +337,23 @@ struct ContentView: View {
                             .cornerRadius(8)
                     }
 
-                    // 4. Photo / Screenshot (Pure 3D world with no buttons, crosshairs, or UI)
+                    // 4. Camera Perspective / View (1st Person, 3rd Person Back, 3rd Person Front)
+                    Button {
+                        world.toggleCameraPerspective()
+                    } label: {
+                        Label(
+                            world.cameraPerspective == .firstPerson ? "1st View" : (world.cameraPerspective == .thirdPersonBack ? "3rd Back" : "3rd Front"),
+                            systemImage: world.cameraPerspective == .firstPerson ? "person.fill" : (world.cameraPerspective == .thirdPersonBack ? "figure.walk" : "face.smiling.fill")
+                        )
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 7)
+                        .background(world.cameraPerspective == .firstPerson ? Color.blue.opacity(0.85) : Color.orange.opacity(0.90))
+                        .cornerRadius(8)
+                    }
+
+                    // 5. Photo / Screenshot (Pure 3D world with no buttons, crosshairs, or UI)
                     Button {
                         triggerCameraFlash()
                         world.captureCleanScreenshot()

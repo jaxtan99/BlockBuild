@@ -321,9 +321,10 @@ struct SavedWorld: Identifiable, Codable {
     var playerZ: Float
     var yaw: Float
     var pitch: Float
+    var customWorldType: CustomWorldType? = nil
 
     enum CodingKeys: String, CodingKey {
-        case id, name, seed, archetypeName, savedAt, savedChunks, deltas, blocks, inventory, playerX, playerY, playerZ, yaw, pitch
+        case id, name, seed, archetypeName, savedAt, savedChunks, deltas, blocks, inventory, playerX, playerY, playerZ, yaw, pitch, customWorldType
     }
 
     init(
@@ -340,7 +341,8 @@ struct SavedWorld: Identifiable, Codable {
         playerY: Float = 15,
         playerZ: Float = 12,
         yaw: Float = 0,
-        pitch: Float = -0.35
+        pitch: Float = -0.35,
+        customWorldType: CustomWorldType? = nil
     ) {
         self.id = id
         self.name = name
@@ -356,6 +358,7 @@ struct SavedWorld: Identifiable, Codable {
         self.playerZ = playerZ
         self.yaw = yaw
         self.pitch = pitch
+        self.customWorldType = customWorldType
     }
 
     init(from decoder: Decoder) throws {
@@ -406,6 +409,7 @@ struct SavedWorld: Identifiable, Codable {
         self.playerZ = (try? c.decode(Float.self, forKey: .playerZ)) ?? Float((try? c.decode(Double.self, forKey: .playerZ)) ?? 12.0)
         self.yaw = (try? c.decode(Float.self, forKey: .yaw)) ?? Float((try? c.decode(Double.self, forKey: .yaw)) ?? 0.0)
         self.pitch = (try? c.decode(Float.self, forKey: .pitch)) ?? Float((try? c.decode(Double.self, forKey: .pitch)) ?? -0.35)
+        self.customWorldType = try? c.decode(CustomWorldType.self, forKey: .customWorldType)
     }
 }
 
@@ -520,6 +524,23 @@ enum SkinFeatureStyle: String, Codable, CaseIterable {
     case pirateEyepatch
     case headphones
     case villagerRobe
+    case catEars
+    case sunglasses
+    case superheroMask
+}
+
+enum CameraPerspective: Int, CaseIterable, Codable {
+    case firstPerson = 0
+    case thirdPersonBack = 1
+    case thirdPersonFront = 2
+
+    var displayName: String {
+        switch self {
+        case .firstPerson: return "1st Person View"
+        case .thirdPersonBack: return "3rd Person (Back)"
+        case .thirdPersonFront: return "3rd Person (Front)"
+        }
+    }
 }
 
 enum PlayerSkin: String, CaseIterable, Codable, Identifiable {
@@ -1006,7 +1027,11 @@ final class VoxelWorld: NSObject, ObservableObject {
     private var fpsTimeAccumulator: Float = 0.0
 
     // Inventory & Hotbar state (all 13 blocks)
-    @Published var selectedBlock: BlockType = .grass
+    @Published var selectedBlock: BlockType = .grass {
+        didSet {
+            updateHeldBlockMaterial()
+        }
+    }
     @Published var inventory: [BlockType: Int] = [
         .grass: 20,
         .dirt: 20,
@@ -1047,6 +1072,13 @@ final class VoxelWorld: NSObject, ObservableObject {
     @Published var activeCustomWorld: CustomWorldType? = nil
     @Published var customSkins: [CustomSkin] = []
     @Published var activeCustomSkin: CustomSkin? = nil
+
+    // Camera Perspective (First Person ↔ Third Person Back ↔ Third Person Front)
+    @Published var cameraPerspective: CameraPerspective = .firstPerson
+    var localPlayerAvatarNode: SCNNode? = nil
+    var firstPersonArmNode: SCNNode? = nil
+    var firstPersonHeldBlockNode: SCNNode? = nil
+    var walkAnimationAccumulator: Float = 0.0
 
     // Local Multiplayer State (Enabled by default, continuously signals nearby players)
     @Published var isMultiplayerEnabled: Bool = true {
@@ -1407,6 +1439,9 @@ final class VoxelWorld: NSObject, ObservableObject {
         scene.rootNode.addChildNode(playersRootNode)
         applyRenderDistance()
 
+        // Build Local Player Avatar Node (for 3rd person views) & First Person Arm
+        refreshLocalPlayerAvatarNode()
+
         let highlightGeo = SCNBox(width: 1.015, height: 1.015, length: 1.015, chamferRadius: 0.0)
         let highlightMat = SCNMaterial()
         highlightMat.diffuse.contents = UIColor(white: 1.0, alpha: 0.18)
@@ -1446,6 +1481,70 @@ final class VoxelWorld: NSObject, ObservableObject {
         statusToast = isMusicEnabled ? "Music: ON" : "Music: OFF"
     }
 
+    // MARK: - Camera Perspective (1st Person & 3rd Person F5 Views)
+
+    func toggleCameraPerspective() {
+        let nextRaw = (cameraPerspective.rawValue + 1) % CameraPerspective.allCases.count
+        cameraPerspective = CameraPerspective(rawValue: nextRaw) ?? .firstPerson
+        updateCameraTransform()
+        statusToast = cameraPerspective.displayName
+    }
+
+    func setupFirstPersonArm() {
+        firstPersonArmNode?.removeFromParentNode()
+
+        let armGeo = SCNBox(width: 0.16, height: 0.45, length: 0.16, chamferRadius: 0.0)
+        let mgr = SkinTextureManager.shared
+        if let custom = activeCustomSkin {
+            armGeo.materials = mgr.rightArmMaterials(for: custom)
+        } else {
+            armGeo.materials = mgr.rightArmMaterials(for: selectedSkin)
+        }
+
+        let armNode = SCNNode(geometry: armGeo)
+        armNode.position = SCNVector3(0.28, -0.26, -0.42)
+        armNode.eulerAngles = SCNVector3(-0.45, 0.25, -0.15)
+
+        // Mini held block attached to hand
+        let blockGeo = SCNBox(width: 0.12, height: 0.12, length: 0.12, chamferRadius: 0.0)
+        blockGeo.materials = selectedBlock.materials(for: currentTexturePack)
+        let blockNode = SCNNode(geometry: blockGeo)
+        blockNode.position = SCNVector3(0, -0.22, -0.10)
+        armNode.addChildNode(blockNode)
+
+        cameraNode.addChildNode(armNode)
+        firstPersonArmNode = armNode
+        firstPersonHeldBlockNode = blockNode
+        updateHeldBlockMaterial()
+    }
+
+    func updateHeldBlockMaterial() {
+        firstPersonHeldBlockNode?.geometry?.materials = selectedBlock.materials(for: currentTexturePack)
+    }
+
+    func punchFirstPersonArm() {
+        guard let arm = firstPersonArmNode, cameraPerspective == .firstPerson else { return }
+        let swing = SCNAction.sequence([
+            SCNAction.rotateBy(x: -0.35, y: 0.15, z: 0.08, duration: 0.06),
+            SCNAction.rotateBy(x: 0.35, y: -0.15, z: -0.08, duration: 0.08)
+        ])
+        arm.runAction(swing)
+    }
+
+    func refreshLocalPlayerAvatarNode() {
+        localPlayerAvatarNode?.removeFromParentNode()
+        let created = Self.makeBlockyPlayerAvatarNode(
+            name: localPlayerName.isEmpty ? "Player" : localPlayerName,
+            skin: selectedSkin,
+            customSkin: activeCustomSkin
+        )
+        created.isHidden = (cameraPerspective == .firstPerson)
+        scene.rootNode.addChildNode(created)
+        localPlayerAvatarNode = created
+
+        setupFirstPersonArm()
+    }
+
     // MARK: - Infinite Procedural World Generation Engine
 
     func enterGame() {
@@ -1467,6 +1566,7 @@ final class VoxelWorld: NSObject, ObservableObject {
         activeCustomSkin = nil
         UserDefaults.standard.set(skin.rawValue, forKey: "blockbuild_selected_skin")
         UserDefaults.standard.removeObject(forKey: "blockbuild_active_custom_skin_id")
+        refreshLocalPlayerAvatarNode()
         broadcastPlayerPoseIfNeeded()
         if isInGame {
             startMultiplayerServices()
@@ -1541,6 +1641,7 @@ final class VoxelWorld: NSObject, ObservableObject {
     func equipCustomSkin(_ skin: CustomSkin) {
         activeCustomSkin = skin
         UserDefaults.standard.set(skin.id.uuidString, forKey: "blockbuild_active_custom_skin_id")
+        refreshLocalPlayerAvatarNode()
         broadcastPlayerPoseIfNeeded()
         statusToast = "Equipped skin '\(skin.name)'"
     }
@@ -1548,6 +1649,7 @@ final class VoxelWorld: NSObject, ObservableObject {
     func clearActiveCustomSkin() {
         activeCustomSkin = nil
         UserDefaults.standard.removeObject(forKey: "blockbuild_active_custom_skin_id")
+        refreshLocalPlayerAvatarNode()
         broadcastPlayerPoseIfNeeded()
     }
 
@@ -1652,7 +1754,13 @@ final class VoxelWorld: NSObject, ObservableObject {
         configureNoiseGenerators(seed: seed)
         applyAtmosphere()
 
-        if type == .skyIslands {
+        if let custom = activeCustomWorld, custom.hasVillages {
+            // Spawn player right on the Village Town Square Plaza facing North towards the Town Hall and Central Fountain
+            let spawnFloorY: Float = 6.0
+            playerPosition = SCNVector3(5.0, spawnFloorY + 1.8, 2.5)
+            yaw = 0.0 // Facing North straight at the Town Hall
+            pitch = -0.10
+        } else if type == .skyIslands {
             let spawnGround = surfaceHeightAt(x: 0, z: 0)
             playerPosition = SCNVector3(0, Float(max(spawnGround, 22)) + 4.5, 0)
         } else if type == .flat {
@@ -1958,8 +2066,14 @@ final class VoxelWorld: NSObject, ObservableObject {
             }
         }
 
-        // Custom World Flora / Trees
-        if custom.hasTrees && custom.treeStyle != "none" {
+        // Determine if chunk belongs to village settlement layout
+        let isSpawnSettlement = custom.hasVillages && (abs(chunk.cx) <= 1 && abs(chunk.cz) <= 1)
+        let chunkHash = abs((chunk.cx &* 73856093) ^ (chunk.cz &* 19349663) ^ (worldSeed &* 83492791)) % 100
+        let densityThreshold = Int(max(0.20, custom.villageDensity) * 100.0)
+        let isVillageChunk = isSpawnSettlement || (custom.hasVillages && chunkHash < densityThreshold) || (custom.structureType != "none" && chunkHash < 35)
+
+        // Custom World Flora / Trees (suppressed in village chunks to keep architecture, squares & streets clean)
+        if custom.hasTrees && custom.treeStyle != "none" && !isVillageChunk {
             let treeMinX = minX + 2
             let treeMaxX = maxX - 2
             let treeMinZ = minZ + 2
@@ -1988,214 +2102,474 @@ final class VoxelWorld: NSObject, ObservableObject {
             }
         }
 
-        // Custom World Procedural Villages & Architecture
-        if custom.hasVillages || custom.structureType != "none" {
-            let chunkHash = abs((chunk.cx &* 73856093) ^ (chunk.cz &* 19349663) ^ (worldSeed &* 83492791)) % 100
-            let densityThreshold = Int(max(0.15, custom.villageDensity) * 100.0)
-            let isSpawnVillage = (abs(chunk.cx) <= 1 && abs(chunk.cz) <= 1)
+        // Custom World Procedural Villages & Guaranteed Spawn Settlements
+        if isVillageChunk {
+            let style = custom.villageStyle
+            let wallBlock: BlockType
+            let cornerBlock: BlockType
+            let roofBlock: BlockType
+            let pathBlock: BlockType
+            let foundationBlock: BlockType
 
-            if chunkHash < densityThreshold || isSpawnVillage {
-                let centerX = minX + 5
-                let centerZ = minZ + 5
-                if let groundH = heights[centerX]?[centerZ], groundH >= 1 && groundH < 26 {
-                    let style = custom.villageStyle
-                    let wallBlock: BlockType
-                    let cornerBlock: BlockType
-                    let roofBlock: BlockType
-                    let pathBlock: BlockType
+            switch style {
+            case "desert":
+                wallBlock = .sand
+                cornerBlock = .smoothStone
+                roofBlock = .smoothStone
+                pathBlock = .smoothStone
+                foundationBlock = .stone
+            case "stone", "castle":
+                wallBlock = .stone
+                cornerBlock = .smoothStone
+                roofBlock = .stone
+                pathBlock = .smoothStone
+                foundationBlock = .stone
+            case "cyber":
+                wallBlock = .smoothStone
+                cornerBlock = .glass
+                roofBlock = .smoothStone
+                pathBlock = .glass
+                foundationBlock = .smoothStone
+            case "ruins":
+                wallBlock = .stone
+                cornerBlock = .stone
+                roofBlock = .dirt
+                pathBlock = .stone
+                foundationBlock = .stone
+            default:
+                wallBlock = .woodPlanks
+                cornerBlock = .woodLog
+                roofBlock = .woodPlanks
+                pathBlock = .smoothStone
+                foundationBlock = .stone
+            }
 
-                    switch style {
-                    case "desert":
-                        wallBlock = .sand
-                        cornerBlock = .smoothStone
-                        roofBlock = .smoothStone
-                        pathBlock = .smoothStone
-                    case "stone", "castle":
-                        wallBlock = .stone
-                        cornerBlock = .smoothStone
-                        roofBlock = .stone
-                        pathBlock = .smoothStone
-                    case "cyber":
-                        wallBlock = .smoothStone
-                        cornerBlock = .glass
-                        roofBlock = .smoothStone
-                        pathBlock = .glass
-                    case "ruins":
-                        wallBlock = .stone
-                        cornerBlock = .stone
-                        roofBlock = .dirt
-                        pathBlock = .stone
-                    default:
-                        wallBlock = .woodPlanks
-                        cornerBlock = .woodLog
-                        roofBlock = .woodPlanks
-                        pathBlock = .stone
+            let baseFloorY = 6
+
+            if isSpawnSettlement {
+                // Guaranteed 3x3 Master Village Settlement around spawn point!
+                if chunk.cx == 0 && chunk.cz == 0 {
+                    // --- 1. Central Town Square & Grand Village Water Fountain ---
+                    for x in minX..<maxX {
+                        for z in minZ..<maxZ {
+                            heights[x]?[z] = baseFloorY
+                            for fy in 0...baseFloorY {
+                                localBlocks[BlockCoord(x: x, y: fy, z: z)] = foundationBlock
+                            }
+                            for ay in (baseFloorY + 1)...(baseFloorY + 7) {
+                                localBlocks.removeValue(forKey: BlockCoord(x: x, y: ay, z: z))
+                            }
+                            let isPath = (abs(x - (minX + 5)) <= 1 || abs(z - (minZ + 5)) <= 1)
+                            localBlocks[BlockCoord(x: x, y: baseFloorY, z: z)] = isPath ? pathBlock : .woodPlanks
+                        }
                     }
 
-                    let structureVariant = (chunkHash + abs(chunk.cx * 3 + chunk.cz * 7)) % 4
-
-                    if structureVariant == 0 || structureVariant == 2 {
-                        // --- A. Authentic Village Cottage / House ---
-                        let bMinX = minX + 2
-                        let bMaxX = minX + 6
-                        let bMinZ = minZ + 2
-                        let bMaxZ = minZ + 6
-                        let baseFloorY = groundH
-                        let wallTopY = baseFloorY + 3
-                        let roofPeakY = baseFloorY + 4
-
-                        // Foundation & Floor
-                        for bx in bMinX...bMaxX {
-                            for bz in bMinZ...bMaxZ {
-                                let currH = heights[bx]?[bz] ?? baseFloorY
-                                for fy in min(currH, baseFloorY)...baseFloorY {
-                                    localBlocks[BlockCoord(x: bx, y: fy, z: bz)] = (bx == bMinX || bx == bMaxX || bz == bMinZ || bz == bMaxZ) ? cornerBlock : .woodPlanks
-                                }
+                    // Central Water Well & Fountain
+                    let wMinX = minX + 3
+                    let wMaxX = minX + 6
+                    let wMinZ = minZ + 3
+                    let wMaxZ = minZ + 6
+                    for wx in wMinX...wMaxX {
+                        for wz in wMinZ...wMaxZ {
+                            let isRim = (wx == wMinX || wx == wMaxX || wz == wMinZ || wz == wMaxZ)
+                            let c = BlockCoord(x: wx, y: baseFloorY, z: wz)
+                            if isRim {
+                                localBlocks[c] = .stone
+                                localBlocks[BlockCoord(x: wx, y: baseFloorY + 1, z: wz)] = .stone
+                            } else {
+                                localBlocks[BlockCoord(x: wx, y: baseFloorY, z: wz)] = .water
+                                waterSourceBlocks.insert(BlockCoord(x: wx, y: baseFloorY, z: wz))
                             }
                         }
-
-                        // Walls with windows and door
-                        for bx in bMinX...bMaxX {
-                            for bz in bMinZ...bMaxZ {
-                                let isCorner = (bx == bMinX || bx == bMaxX) && (bz == bMinZ || bz == bMaxZ)
-                                let isPerimeter = (bx == bMinX || bx == bMaxX || bz == bMinZ || bz == bMaxZ)
-
-                                if isPerimeter {
-                                    for wy in (baseFloorY + 1)...wallTopY {
-                                        let coord = BlockCoord(x: bx, y: wy, z: bz)
-                                        if isCorner {
-                                            localBlocks[coord] = cornerBlock
-                                        } else if wy == baseFloorY + 2 && (bx == bMinX + 2 || bz == bMinZ + 2) {
-                                            localBlocks[coord] = .glass
-                                        } else if wy <= baseFloorY + 2 && bx == bMinX + 2 && bz == bMinZ {
-                                            if wy == baseFloorY + 1 {
-                                                localBlocks[coord] = .door
-                                            } else {
-                                                localBlocks.removeValue(forKey: coord)
-                                            }
-                                        } else {
-                                            localBlocks[coord] = wallBlock
-                                        }
-                                    }
-                                } else {
-                                    for wy in (baseFloorY + 1)...roofPeakY {
-                                        localBlocks.removeValue(forKey: BlockCoord(x: bx, y: wy, z: bz))
-                                    }
-                                }
+                    }
+                    // Canopy roof over well
+                    for cx in [wMinX, wMaxX] {
+                        for cz in [wMinZ, wMaxZ] {
+                            for py in (baseFloorY + 2)...(baseFloorY + 4) {
+                                localBlocks[BlockCoord(x: cx, y: py, z: cz)] = cornerBlock
                             }
                         }
+                    }
+                    for wx in (wMinX - 1)...(wMaxX + 1) {
+                        for wz in (wMinZ - 1)...(wMaxZ + 1) {
+                            localBlocks[BlockCoord(x: wx, y: baseFloorY + 5, z: wz)] = roofBlock
+                        }
+                    }
 
-                        // Roof
-                        for bx in (bMinX - 1)...(bMaxX + 1) {
-                            for bz in (bMinZ - 1)...(bMaxZ + 1) {
-                                localBlocks[BlockCoord(x: bx, y: roofPeakY, z: bz)] = roofBlock
+                    // 4 Corner Lamp Posts
+                    let lampCoords = [
+                        (minX + 2, minZ + 2), (maxX - 3, minZ + 2),
+                        (minX + 2, maxZ - 3), (maxX - 3, maxZ - 3)
+                    ]
+                    for (lx, lz) in lampCoords {
+                        localBlocks[BlockCoord(x: lx, y: baseFloorY + 1, z: lz)] = cornerBlock
+                        localBlocks[BlockCoord(x: lx, y: baseFloorY + 2, z: lz)] = cornerBlock
+                        localBlocks[BlockCoord(x: lx, y: baseFloorY + 3, z: lz)] = .glass
+                        localBlocks[BlockCoord(x: lx, y: baseFloorY + 4, z: lz)] = .slab
+                    }
+
+                    // Plaza Benches
+                    localBlocks[BlockCoord(x: minX + 2, y: baseFloorY + 1, z: minZ + 5)] = .slab
+                    localBlocks[BlockCoord(x: maxX - 3, y: baseFloorY + 1, z: minZ + 5)] = .slab
+
+                } else if chunk.cx == 0 && chunk.cz == 1 {
+                    // --- 2. Grand Town Hall & Meeting Chamber ---
+                    for x in minX..<maxX {
+                        for z in minZ..<maxZ {
+                            heights[x]?[z] = baseFloorY
+                            for fy in 0...baseFloorY {
+                                localBlocks[BlockCoord(x: x, y: fy, z: z)] = foundationBlock
+                            }
+                            for ay in (baseFloorY + 1)...(baseFloorY + 8) {
+                                localBlocks.removeValue(forKey: BlockCoord(x: x, y: ay, z: z))
+                            }
+                            if abs(x - (minX + 5)) <= 1 {
+                                localBlocks[BlockCoord(x: x, y: baseFloorY, z: z)] = pathBlock
                             }
                         }
-                        for bx in bMinX...bMaxX {
-                            for bz in bMinZ...bMaxZ {
-                                localBlocks[BlockCoord(x: bx, y: roofPeakY + 1, z: bz)] = roofBlock
-                            }
+                    }
+
+                    let bMinX = minX + 2
+                    let bMaxX = maxX - 3
+                    let bMinZ = minZ + 2
+                    let bMaxZ = maxZ - 2
+                    let wallTopY = baseFloorY + 4
+                    let roofPeakY = baseFloorY + 5
+
+                    // Floor
+                    for bx in bMinX...bMaxX {
+                        for bz in bMinZ...bMaxZ {
+                            localBlocks[BlockCoord(x: bx, y: baseFloorY, z: bz)] = .woodPlanks
                         }
+                    }
 
-                    } else if structureVariant == 1 {
-                        // --- B. Village Stone Watchtower ---
-                        let tMinX = minX + 3
-                        let tMaxX = minX + 6
-                        let tMinZ = minZ + 3
-                        let tMaxZ = minZ + 6
-                        let towerBaseY = groundH
-                        let towerTopY = towerBaseY + 6
+                    // Walls & Windows
+                    for bx in bMinX...bMaxX {
+                        for bz in bMinZ...bMaxZ {
+                            let isCorner = (bx == bMinX || bx == bMaxX) && (bz == bMinZ || bz == bMaxZ)
+                            let isPerimeter = (bx == bMinX || bx == bMaxX || bz == bMinZ || bz == bMaxZ)
 
-                        // Foundation
-                        for tx in tMinX...tMaxX {
-                            for tz in tMinZ...tMaxZ {
-                                let currH = heights[tx]?[tz] ?? towerBaseY
-                                for fy in min(currH, towerBaseY)...towerBaseY {
-                                    localBlocks[BlockCoord(x: tx, y: fy, z: tz)] = .stone
-                                }
-                            }
-                        }
-
-                        // Walls
-                        for wy in (towerBaseY + 1)...towerTopY {
-                            for tx in tMinX...tMaxX {
-                                for tz in tMinZ...tMaxZ {
-                                    let isPerimeter = (tx == tMinX || tx == tMaxX || tz == tMinZ || tz == tMaxZ)
-                                    let coord = BlockCoord(x: tx, y: wy, z: tz)
-                                    if isPerimeter {
-                                        if (wy == towerBaseY + 3 || wy == towerBaseY + 5) && (tx == tMinX + 1 || tz == tMinZ + 1) {
-                                            localBlocks[coord] = .glass
-                                        } else if wy == towerBaseY + 1 && tx == tMinX + 1 && tz == tMinZ {
+                            if isPerimeter {
+                                for wy in (baseFloorY + 1)...wallTopY {
+                                    let coord = BlockCoord(x: bx, y: wy, z: bz)
+                                    if isCorner {
+                                        localBlocks[coord] = cornerBlock
+                                    } else if (bx == minX + 4 || bx == minX + 5) && bz == bMinZ && wy <= baseFloorY + 2 {
+                                        // Grand double-door entrance facing South plaza!
+                                        if wy == baseFloorY + 1 {
                                             localBlocks[coord] = .door
                                         } else {
-                                            localBlocks[coord] = .stone
+                                            localBlocks.removeValue(forKey: coord)
                                         }
+                                    } else if wy == baseFloorY + 2 || wy == baseFloorY + 3 {
+                                        localBlocks[coord] = (bx % 2 == 0 || bz % 2 == 0) ? .glass : wallBlock
                                     } else {
-                                        localBlocks.removeValue(forKey: coord)
+                                        localBlocks[coord] = wallBlock
                                     }
                                 }
                             }
                         }
+                    }
 
-                        // Battlements
-                        for tx in (tMinX - 1)...(tMaxX + 1) {
-                            for tz in (tMinZ - 1)...(tMaxZ + 1) {
-                                localBlocks[BlockCoord(x: tx, y: towerTopY, z: tz)] = .smoothStone
-                                if (tx == tMinX - 1 || tx == tMaxX + 1 || tz == tMinZ - 1 || tz == tMaxZ + 1) && (tx + tz) % 2 == 0 {
-                                    localBlocks[BlockCoord(x: tx, y: towerTopY + 1, z: tz)] = .stone
-                                }
-                            }
+                    // Pitched Stately Roof
+                    for bx in (bMinX - 1)...(bMaxX + 1) {
+                        for bz in (bMinZ - 1)...(bMaxZ + 1) {
+                            localBlocks[BlockCoord(x: bx, y: roofPeakY, z: bz)] = roofBlock
                         }
-
-                    } else {
-                        // --- C. Village Water Well & Plaza ---
-                        let wMinX = minX + 3
-                        let wMaxX = minX + 6
-                        let wMinZ = minZ + 3
-                        let wMaxZ = minZ + 6
-                        let wellBaseY = groundH
-
-                        for wx in wMinX...wMaxX {
-                            for wz in wMinZ...wMaxZ {
-                                let isRim = (wx == wMinX || wx == wMaxX || wz == wMinZ || wz == wMaxZ)
-                                let coord = BlockCoord(x: wx, y: wellBaseY, z: wz)
-                                localBlocks[coord] = .stone
-
-                                if isRim {
-                                    localBlocks[BlockCoord(x: wx, y: wellBaseY + 1, z: wz)] = .stone
-                                } else {
-                                    localBlocks[BlockCoord(x: wx, y: wellBaseY - 1, z: wz)] = .water
-                                    localBlocks[BlockCoord(x: wx, y: wellBaseY, z: wz)] = .water
-                                    waterSourceBlocks.insert(BlockCoord(x: wx, y: wellBaseY, z: wz))
-                                }
-                            }
+                    }
+                    for bx in bMinX...bMaxX {
+                        for bz in bMinZ...bMaxZ {
+                            localBlocks[BlockCoord(x: bx, y: roofPeakY + 1, z: bz)] = roofBlock
                         }
-                        let roofY = wellBaseY + 4
-                        for cx in [wMinX, wMaxX] {
-                            for cz in [wMinZ, wMaxZ] {
-                                for py in (wellBaseY + 2)...roofY {
-                                    localBlocks[BlockCoord(x: cx, y: py, z: cz)] = .woodLog
-                                }
+                    }
+
+                    // Meeting Table Inside
+                    localBlocks[BlockCoord(x: minX + 4, y: baseFloorY + 1, z: minZ + 4)] = .woodPlanks
+                    localBlocks[BlockCoord(x: minX + 5, y: baseFloorY + 1, z: minZ + 4)] = .woodPlanks
+
+                } else if chunk.cx == 1 && chunk.cz == 0 {
+                    // --- 3. East Village Residential Cottages ---
+                    for x in minX..<maxX {
+                        for z in minZ..<maxZ {
+                            heights[x]?[z] = baseFloorY
+                            for fy in 0...baseFloorY {
+                                localBlocks[BlockCoord(x: x, y: fy, z: z)] = foundationBlock
                             }
-                        }
-                        for wx in (wMinX - 1)...(wMaxX + 1) {
-                            for wz in (wMinZ - 1)...(wMaxZ + 1) {
-                                localBlocks[BlockCoord(x: wx, y: roofY, z: wz)] = .woodPlanks
+                            for ay in (baseFloorY + 1)...(baseFloorY + 7) {
+                                localBlocks.removeValue(forKey: BlockCoord(x: x, y: ay, z: z))
+                            }
+                            if z == minZ + 5 {
+                                localBlocks[BlockCoord(x: x, y: baseFloorY, z: z)] = pathBlock
                             }
                         }
                     }
 
-                    // --- D. Connecting Village Pathways ---
-                    let pathZ = minZ + 1
-                    for px in minX..<maxX {
-                        if let gh = heights[px]?[pathZ], gh >= 1 {
-                            let pathCoord = BlockCoord(x: px, y: gh, z: pathZ)
-                            if localBlocks[pathCoord] != .water && localBlocks[pathCoord] != .door {
-                                localBlocks[pathCoord] = pathBlock
+                    // Cottage 1
+                    let c1MinX = minX + 3
+                    let c1MaxX = maxX - 2
+                    let c1MinZ = minZ + 1
+                    let c1MaxZ = minZ + 5
+                    for bx in c1MinX...c1MaxX {
+                        for bz in c1MinZ...c1MaxZ {
+                            localBlocks[BlockCoord(x: bx, y: baseFloorY, z: bz)] = .woodPlanks
+                            let isPerimeter = (bx == c1MinX || bx == c1MaxX || bz == c1MinZ || bz == c1MaxZ)
+                            let isCorner = (bx == c1MinX || bx == c1MaxX) && (bz == c1MinZ || bz == c1MaxZ)
+                            if isPerimeter {
+                                for wy in (baseFloorY + 1)...(baseFloorY + 3) {
+                                    let coord = BlockCoord(x: bx, y: wy, z: bz)
+                                    if isCorner {
+                                        localBlocks[coord] = cornerBlock
+                                    } else if bx == c1MinX && bz == minZ + 3 && wy == baseFloorY + 1 {
+                                        localBlocks[coord] = .door
+                                    } else if wy == baseFloorY + 2 && (bz == minZ + 3 || bx == c1MinX + 2) {
+                                        localBlocks[coord] = .glass
+                                    } else {
+                                        localBlocks[coord] = wallBlock
+                                    }
+                                }
                             }
-                            localBlocks.removeValue(forKey: BlockCoord(x: px, y: gh + 1, z: pathZ))
-                            localBlocks.removeValue(forKey: BlockCoord(x: px, y: gh + 2, z: pathZ))
                         }
+                    }
+                    for bx in (c1MinX - 1)...(c1MaxX + 1) {
+                        for bz in (c1MinZ - 1)...(c1MaxZ + 1) {
+                            localBlocks[BlockCoord(x: bx, y: baseFloorY + 4, z: bz)] = roofBlock
+                        }
+                    }
+
+                } else if chunk.cx == -1 && chunk.cz == 0 {
+                    // --- 4. West Guard Watchtower & Armory ---
+                    for x in minX..<maxX {
+                        for z in minZ..<maxZ {
+                            heights[x]?[z] = baseFloorY
+                            for fy in 0...baseFloorY {
+                                localBlocks[BlockCoord(x: x, y: fy, z: z)] = foundationBlock
+                            }
+                            for ay in (baseFloorY + 1)...(baseFloorY + 10) {
+                                localBlocks.removeValue(forKey: BlockCoord(x: x, y: ay, z: z))
+                            }
+                            if z == minZ + 5 {
+                                localBlocks[BlockCoord(x: x, y: baseFloorY, z: z)] = pathBlock
+                            }
+                        }
+                    }
+
+                    let tMinX = minX + 2
+                    let tMaxX = minX + 6
+                    let tMinZ = minZ + 3
+                    let tMaxZ = minZ + 7
+                    let towerTopY = baseFloorY + 7
+
+                    for tx in tMinX...tMaxX {
+                        for tz in tMinZ...tMaxZ {
+                            let isPerimeter = (tx == tMinX || tx == tMaxX || tz == tMinZ || tz == tMaxZ)
+                            for wy in (baseFloorY + 1)...towerTopY {
+                                let coord = BlockCoord(x: tx, y: wy, z: tz)
+                                if isPerimeter {
+                                    if wy == baseFloorY + 1 && tx == tMaxX && tz == minZ + 5 {
+                                        localBlocks[coord] = .door
+                                    } else if (wy == baseFloorY + 3 || wy == baseFloorY + 5) && (tx == tMinX + 2 || tz == tMinZ + 2) {
+                                        localBlocks[coord] = .glass
+                                    } else {
+                                        localBlocks[coord] = .stone
+                                    }
+                                } else {
+                                    localBlocks.removeValue(forKey: coord)
+                                }
+                            }
+                        }
+                    }
+                    // Battlements & Crenellations
+                    for tx in (tMinX - 1)...(tMaxX + 1) {
+                        for tz in (tMinZ - 1)...(tMaxZ + 1) {
+                            localBlocks[BlockCoord(x: tx, y: towerTopY, z: tz)] = .smoothStone
+                            if (tx == tMinX - 1 || tx == tMaxX + 1 || tz == tMinZ - 1 || tz == tMaxZ + 1) && (tx + tz) % 2 == 0 {
+                                localBlocks[BlockCoord(x: tx, y: towerTopY + 1, z: tz)] = .stone
+                            }
+                        }
+                    }
+
+                } else if chunk.cx == 0 && chunk.cz == -1 {
+                    // --- 5. South Farmland & Granary ---
+                    for x in minX..<maxX {
+                        for z in minZ..<maxZ {
+                            heights[x]?[z] = baseFloorY
+                            for fy in 0...baseFloorY {
+                                localBlocks[BlockCoord(x: x, y: fy, z: z)] = foundationBlock
+                            }
+                            for ay in (baseFloorY + 1)...(baseFloorY + 7) {
+                                localBlocks.removeValue(forKey: BlockCoord(x: x, y: ay, z: z))
+                            }
+                            localBlocks[BlockCoord(x: x, y: baseFloorY, z: z)] = .dirt
+                        }
+                    }
+
+                    // Central Irrigation Canal
+                    for z in minZ..<maxZ {
+                        let canalCoord = BlockCoord(x: minX + 5, y: baseFloorY, z: z)
+                        localBlocks[canalCoord] = .water
+                        waterSourceBlocks.insert(canalCoord)
+                    }
+
+                    // Green crops & tilled farm border
+                    for x in (minX + 2)...(maxX - 3) {
+                        for z in (minZ + 2)...(maxZ - 3) {
+                            if x != minX + 5 {
+                                localBlocks[BlockCoord(x: x, y: baseFloorY + 1, z: z)] = .slab
+                            }
+                        }
+                    }
+
+                } else {
+                    // Diagonal settlement corners: connecting pathways and cottages
+                    for x in minX..<maxX {
+                        for z in minZ..<maxZ {
+                            heights[x]?[z] = baseFloorY
+                            for fy in 0...baseFloorY {
+                                localBlocks[BlockCoord(x: x, y: fy, z: z)] = foundationBlock
+                            }
+                            for ay in (baseFloorY + 1)...(baseFloorY + 6) {
+                                localBlocks.removeValue(forKey: BlockCoord(x: x, y: ay, z: z))
+                            }
+                            if x == minX + 5 || z == minZ + 5 {
+                                localBlocks[BlockCoord(x: x, y: baseFloorY, z: z)] = pathBlock
+                            }
+                        }
+                    }
+                }
+
+            } else {
+                // Procedural Settlement Chunks throughout the infinite world!
+                let centerX = minX + 5
+                let centerZ = minZ + 5
+                let groundH = max(3, min(24, heights[centerX]?[centerZ] ?? baseFloorY))
+
+                // Ground leveling across structure footprint
+                for bx in (minX + 2)...(maxX - 3) {
+                    for bz in (minZ + 2)...(maxZ - 3) {
+                        for fy in 0...groundH {
+                            localBlocks[BlockCoord(x: bx, y: fy, z: bz)] = foundationBlock
+                        }
+                        for ay in (groundH + 1)...(groundH + 7) {
+                            localBlocks.removeValue(forKey: BlockCoord(x: bx, y: ay, z: bz))
+                        }
+                    }
+                }
+
+                let structureVariant = (chunkHash + abs(chunk.cx * 3 + chunk.cz * 7)) % 4
+
+                if structureVariant == 0 || structureVariant == 2 {
+                    // Authentic Cottage
+                    let bMinX = minX + 2
+                    let bMaxX = minX + 6
+                    let bMinZ = minZ + 2
+                    let bMaxZ = minZ + 6
+                    let wallTopY = groundH + 3
+                    let roofPeakY = groundH + 4
+
+                    for bx in bMinX...bMaxX {
+                        for bz in bMinZ...bMaxZ {
+                            localBlocks[BlockCoord(x: bx, y: groundH, z: bz)] = .woodPlanks
+                            let isCorner = (bx == bMinX || bx == bMaxX) && (bz == bMinZ || bz == bMaxZ)
+                            let isPerimeter = (bx == bMinX || bx == bMaxX || bz == bMinZ || bz == bMaxZ)
+                            if isPerimeter {
+                                for wy in (groundH + 1)...wallTopY {
+                                    let coord = BlockCoord(x: bx, y: wy, z: bz)
+                                    if isCorner {
+                                        localBlocks[coord] = cornerBlock
+                                    } else if wy == groundH + 1 && bx == bMinX + 2 && bz == bMinZ {
+                                        localBlocks[coord] = .door
+                                    } else if wy == groundH + 2 && (bx == bMinX + 2 || bz == bMinZ + 2) {
+                                        localBlocks[coord] = .glass
+                                    } else {
+                                        localBlocks[coord] = wallBlock
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    for bx in (bMinX - 1)...(bMaxX + 1) {
+                        for bz in (bMinZ - 1)...(bMaxZ + 1) {
+                            localBlocks[BlockCoord(x: bx, y: roofPeakY, z: bz)] = roofBlock
+                        }
+                    }
+                } else if structureVariant == 1 {
+                    // Stone Watchtower
+                    let tMinX = minX + 3
+                    let tMaxX = minX + 6
+                    let tMinZ = minZ + 3
+                    let tMaxZ = minZ + 6
+                    let towerTopY = groundH + 6
+
+                    for tx in tMinX...tMaxX {
+                        for tz in tMinZ...tMaxZ {
+                            let isPerimeter = (tx == tMinX || tx == tMaxX || tz == tMinZ || tz == tMaxZ)
+                            for wy in (groundH + 1)...towerTopY {
+                                let coord = BlockCoord(x: tx, y: wy, z: tz)
+                                if isPerimeter {
+                                    if wy == groundH + 1 && tx == tMinX + 1 && tz == tMinZ {
+                                        localBlocks[coord] = .door
+                                    } else if (wy == groundH + 3 || wy == groundH + 5) && (tx == tMinX + 1 || tz == tMinZ + 1) {
+                                        localBlocks[coord] = .glass
+                                    } else {
+                                        localBlocks[coord] = .stone
+                                    }
+                                } else {
+                                    localBlocks.removeValue(forKey: coord)
+                                }
+                            }
+                        }
+                    }
+                    for tx in (tMinX - 1)...(tMaxX + 1) {
+                        for tz in (tMinZ - 1)...(tMaxZ + 1) {
+                            localBlocks[BlockCoord(x: tx, y: towerTopY, z: tz)] = .smoothStone
+                            if (tx == tMinX - 1 || tx == tMaxX + 1 || tz == tMinZ - 1 || tz == tMaxZ + 1) && (tx + tz) % 2 == 0 {
+                                localBlocks[BlockCoord(x: tx, y: towerTopY + 1, z: tz)] = .stone
+                            }
+                        }
+                    }
+                } else {
+                    // Village Water Well & Plaza
+                    let wMinX = minX + 3
+                    let wMaxX = minX + 6
+                    let wMinZ = minZ + 3
+                    let wMaxZ = minZ + 6
+                    for wx in wMinX...wMaxX {
+                        for wz in wMinZ...wMaxZ {
+                            let isRim = (wx == wMinX || wx == wMaxX || wz == wMinZ || wz == wMaxZ)
+                            let coord = BlockCoord(x: wx, y: groundH, z: wz)
+                            if isRim {
+                                localBlocks[coord] = .stone
+                                localBlocks[BlockCoord(x: wx, y: groundH + 1, z: wz)] = .stone
+                            } else {
+                                localBlocks[BlockCoord(x: wx, y: groundH, z: wz)] = .water
+                                waterSourceBlocks.insert(BlockCoord(x: wx, y: groundH, z: wz))
+                            }
+                        }
+                    }
+                    for cx in [wMinX, wMaxX] {
+                        for cz in [wMinZ, wMaxZ] {
+                            for py in (groundH + 2)...(groundH + 4) {
+                                localBlocks[BlockCoord(x: cx, y: py, z: cz)] = cornerBlock
+                            }
+                        }
+                    }
+                    for wx in (wMinX - 1)...(wMaxX + 1) {
+                        for wz in (wMinZ - 1)...(wMaxZ + 1) {
+                            localBlocks[BlockCoord(x: wx, y: groundH + 5, z: wz)] = roofBlock
+                        }
+                    }
+                }
+
+                // Connecting Village Pathways across chunk
+                let pathZ = minZ + 1
+                for px in minX..<maxX {
+                    if let gh = heights[px]?[pathZ], gh >= 1 {
+                        let pathCoord = BlockCoord(x: px, y: gh, z: pathZ)
+                        if localBlocks[pathCoord] != .water && localBlocks[pathCoord] != .door {
+                            localBlocks[pathCoord] = pathBlock
+                        }
+                        localBlocks.removeValue(forKey: BlockCoord(x: px, y: gh + 1, z: pathZ))
+                        localBlocks.removeValue(forKey: BlockCoord(x: px, y: gh + 2, z: pathZ))
                     }
                 }
             }
@@ -3344,6 +3718,7 @@ final class VoxelWorld: NSObject, ObservableObject {
         let waterSpreadLevelsSnapshot = waterSpreadLevels
         let openToggleBlocksSnapshot = openToggleBlocks
         let blockOrientationsSnapshot = blockOrientations
+        let customSnapshot = activeCustomWorld
 
         hasUnsavedChanges = false
 
@@ -3399,7 +3774,8 @@ final class VoxelWorld: NSObject, ObservableObject {
                 playerY: pPos.y,
                 playerZ: pPos.z,
                 yaw: pYaw,
-                pitch: pPitch
+                pitch: pPitch,
+                customWorldType: customSnapshot
             )
 
             DispatchQueue.main.async {
@@ -3422,7 +3798,11 @@ final class VoxelWorld: NSObject, ObservableObject {
 
         currentWorldID = saved.id
         currentWorldName = Self.cleanWorldName(saved.name, seed: saved.seed)
-        if let customMatch = customWorldTypes.first(where: { $0.name == saved.archetypeName || $0.id.uuidString == saved.archetypeName }) {
+        if let customSaved = saved.customWorldType {
+            activeCustomWorld = customSaved
+            currentWorldType = customSaved.baseWorldType
+            saveCustomWorldType(customSaved)
+        } else if let customMatch = customWorldTypes.first(where: { $0.name == saved.archetypeName || $0.id.uuidString == saved.archetypeName }) {
             activeCustomWorld = customMatch
             currentWorldType = customMatch.baseWorldType
         } else {
@@ -3865,6 +4245,7 @@ final class VoxelWorld: NSObject, ObservableObject {
 
     func breakTargetedBlock() {
         updateCrosshairTarget()
+        punchFirstPersonArm()
         guard let coord = currentHitCoord, let brokenType = blocks[coord] else {
             statusToast = "Look at a block or water to break/scoop"
             return
@@ -3925,6 +4306,7 @@ final class VoxelWorld: NSObject, ObservableObject {
 
     func placeSelectedBlock() {
         updateCrosshairTarget()
+        punchFirstPersonArm()
 
         // If holding Water bucket:
         if selectedBlock == .water {
@@ -4360,6 +4742,22 @@ final class VoxelWorld: NSObject, ObservableObject {
 
         playerPosition = pos
         updateCameraTransform()
+
+        // Limb walk cycle animation for 3rd person avatar views
+        let horizDist = sqrt(vx * vx + vz * vz)
+        if horizDist > 0.1 && (isFlying || isPlayerGrounded(at: pos)) {
+            walkAnimationAccumulator += clampedDt * 8.5
+            let angle = sin(walkAnimationAccumulator) * 0.45
+            localPlayerAvatarNode?.childNode(withName: "leftLeg", recursively: true)?.eulerAngles.x = angle
+            localPlayerAvatarNode?.childNode(withName: "rightLeg", recursively: true)?.eulerAngles.x = -angle
+            localPlayerAvatarNode?.childNode(withName: "leftArm", recursively: true)?.eulerAngles.x = -angle
+            localPlayerAvatarNode?.childNode(withName: "rightArm", recursively: true)?.eulerAngles.x = angle
+        } else {
+            localPlayerAvatarNode?.childNode(withName: "leftLeg", recursively: true)?.eulerAngles.x *= 0.85
+            localPlayerAvatarNode?.childNode(withName: "rightLeg", recursively: true)?.eulerAngles.x *= 0.85
+            localPlayerAvatarNode?.childNode(withName: "leftArm", recursively: true)?.eulerAngles.x *= 0.85
+            localPlayerAvatarNode?.childNode(withName: "rightArm", recursively: true)?.eulerAngles.x *= 0.85
+        }
         updateStreamedChunks(force: false)
 
         // Step flowing water & falling sand simulation every 0.20 seconds
@@ -4425,8 +4823,43 @@ final class VoxelWorld: NSObject, ObservableObject {
     func updateCameraTransform() {
         SCNTransaction.begin()
         SCNTransaction.animationDuration = 0
-        cameraNode.position = playerPosition
-        cameraNode.eulerAngles = SCNVector3(pitch, yaw, 0)
+
+        switch cameraPerspective {
+        case .firstPerson:
+            localPlayerAvatarNode?.isHidden = true
+            firstPersonArmNode?.isHidden = false
+            cameraNode.position = playerPosition
+            cameraNode.eulerAngles = SCNVector3(pitch, yaw, 0)
+
+        case .thirdPersonBack:
+            localPlayerAvatarNode?.isHidden = false
+            firstPersonArmNode?.isHidden = true
+            localPlayerAvatarNode?.position = SCNVector3(playerPosition.x, playerPosition.y - playerFeetOffset, playerPosition.z)
+            localPlayerAvatarNode?.eulerAngles = SCNVector3(0, yaw, 0)
+
+            let dist: Float = 3.2
+            let cosP = cos(pitch)
+            let sinP = sin(pitch)
+            let camX = playerPosition.x + sin(yaw) * cosP * dist
+            let camY = playerPosition.y + sinP * dist + 0.35
+            let camZ = playerPosition.z + cos(yaw) * cosP * dist
+            cameraNode.position = SCNVector3(camX, camY, camZ)
+            cameraNode.eulerAngles = SCNVector3(pitch, yaw, 0)
+
+        case .thirdPersonFront:
+            localPlayerAvatarNode?.isHidden = false
+            firstPersonArmNode?.isHidden = true
+            localPlayerAvatarNode?.position = SCNVector3(playerPosition.x, playerPosition.y - playerFeetOffset, playerPosition.z)
+            localPlayerAvatarNode?.eulerAngles = SCNVector3(0, yaw, 0)
+
+            let dist: Float = 3.0
+            let camX = playerPosition.x - sin(yaw) * dist
+            let camY = playerPosition.y + 0.25
+            let camZ = playerPosition.z - cos(yaw) * dist
+            cameraNode.position = SCNVector3(camX, camY, camZ)
+            cameraNode.eulerAngles = SCNVector3(-pitch * 0.4, yaw + Float.pi, 0)
+        }
+
         SCNTransaction.commit()
     }
 
@@ -5067,12 +5500,14 @@ final class VoxelWorld: NSObject, ObservableObject {
         let leftLegGeo = SCNBox(width: 0.22, height: 0.65, length: 0.22, chamferRadius: 0.0)
         leftLegGeo.materials = customSkin != nil ? mgr.leftLegMaterials(for: customSkin!) : mgr.leftLegMaterials(for: skin)
         let leftLegNode = SCNNode(geometry: leftLegGeo)
+        leftLegNode.name = "leftLeg"
         leftLegNode.position = SCNVector3(-0.13, 0.325, 0)
         bodyNode.addChildNode(leftLegNode)
 
         let rightLegGeo = SCNBox(width: 0.22, height: 0.65, length: 0.22, chamferRadius: 0.0)
         rightLegGeo.materials = customSkin != nil ? mgr.rightLegMaterials(for: customSkin!) : mgr.rightLegMaterials(for: skin)
         let rightLegNode = SCNNode(geometry: rightLegGeo)
+        rightLegNode.name = "rightLeg"
         rightLegNode.position = SCNVector3(0.13, 0.325, 0)
         bodyNode.addChildNode(rightLegNode)
 
@@ -5080,6 +5515,7 @@ final class VoxelWorld: NSObject, ObservableObject {
         let torsoGeo = SCNBox(width: 0.50, height: 0.65, length: 0.25, chamferRadius: 0.0)
         torsoGeo.materials = customSkin != nil ? mgr.torsoMaterials(for: customSkin!) : mgr.torsoMaterials(for: skin)
         let torsoNode = SCNNode(geometry: torsoGeo)
+        torsoNode.name = "torso"
         torsoNode.position = SCNVector3(0, 0.975, 0)
         bodyNode.addChildNode(torsoNode)
 
@@ -5087,12 +5523,14 @@ final class VoxelWorld: NSObject, ObservableObject {
         let leftArmGeo = SCNBox(width: 0.22, height: 0.65, length: 0.22, chamferRadius: 0.0)
         leftArmGeo.materials = customSkin != nil ? mgr.leftArmMaterials(for: customSkin!) : mgr.leftArmMaterials(for: skin)
         let leftArmNode = SCNNode(geometry: leftArmGeo)
+        leftArmNode.name = "leftArm"
         leftArmNode.position = SCNVector3(-0.36, 0.975, 0)
         bodyNode.addChildNode(leftArmNode)
 
         let rightArmGeo = SCNBox(width: 0.22, height: 0.65, length: 0.22, chamferRadius: 0.0)
         rightArmGeo.materials = customSkin != nil ? mgr.rightArmMaterials(for: customSkin!) : mgr.rightArmMaterials(for: skin)
         let rightArmNode = SCNNode(geometry: rightArmGeo)
+        rightArmNode.name = "rightArm"
         rightArmNode.position = SCNVector3(0.36, 0.975, 0)
         bodyNode.addChildNode(rightArmNode)
 
@@ -5100,6 +5538,7 @@ final class VoxelWorld: NSObject, ObservableObject {
         let headGeo = SCNBox(width: 0.50, height: 0.50, length: 0.50, chamferRadius: 0.0)
         headGeo.materials = customSkin != nil ? mgr.headMaterials(for: customSkin!) : mgr.headMaterials(for: skin)
         let headNode = SCNNode(geometry: headGeo)
+        headNode.name = "head"
         headNode.position = SCNVector3(0, 1.55, 0)
         bodyNode.addChildNode(headNode)
 
