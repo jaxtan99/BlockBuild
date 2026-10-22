@@ -931,7 +931,7 @@ struct AIStudioSheet: View {
     @ObservedObject var world: VoxelWorld
     @Environment(\.dismiss) private var dismiss
 
-    @State private var selectedTab: StudioTab = .worlds
+    @State private var selectedTab: StudioTab
     @State private var worldPrompt: String = ""
     @State private var skinPrompt: String = ""
     @State private var generatedWorld: CustomWorldType? = nil
@@ -951,16 +951,64 @@ struct AIStudioSheet: View {
         }
     }
 
+    init(world: VoxelWorld, initialTab: StudioTab = .worlds) {
+        self.world = world
+        self._selectedTab = State(initialValue: initialTab)
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Tab Selector
-                Picker("Studio Mode", selection: $selectedTab) {
-                    ForEach(StudioTab.allCases) { tab in
-                        Label(tab.rawValue, systemImage: tab.icon).tag(tab)
+                // High-visibility, 100% responsive Studio Tab Switcher
+                HStack(spacing: 8) {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            selectedTab = .worlds
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "globe.americas.fill")
+                                .font(.system(size: 13, weight: .bold))
+                            Text("World Generator")
+                                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                        }
+                        .foregroundColor(selectedTab == .worlds ? .white : .white.opacity(0.6))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(selectedTab == .worlds ? Color.purple.opacity(0.85) : Color.white.opacity(0.08))
+                        .cornerRadius(8)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(selectedTab == .worlds ? Color.purple : Color.clear, lineWidth: 1)
+                        )
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            selectedTab = .skins
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "person.crop.artframe")
+                                .font(.system(size: 13, weight: .bold))
+                            Text("Skin Generator")
+                                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                        }
+                        .foregroundColor(selectedTab == .skins ? .white : .white.opacity(0.6))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(selectedTab == .skins ? Color.cyan.opacity(0.85) : Color.white.opacity(0.08))
+                        .cornerRadius(8)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(selectedTab == .skins ? Color.cyan : Color.clear, lineWidth: 1)
+                        )
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                 }
-                .pickerStyle(.segmented)
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
                 .padding(.bottom, 8)
@@ -975,8 +1023,9 @@ struct AIStudioSheet: View {
             .navigationTitle("✨ AI Game Studio")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
+                ToolbarItem(placement: .topBarTrailing) {
                     Button("Close") { dismiss() }
+                        .font(.system(size: 13, weight: .bold, design: .monospaced))
                         .foregroundColor(.white.opacity(0.8))
                 }
             }

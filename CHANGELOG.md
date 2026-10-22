@@ -35,6 +35,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - Remote player avatars dynamically receive and apply custom AI skin textures over local Wi-Fi.
 
 ### Fixed
+- **Settings Button Hit-Testing & Tactile Responsiveness**:
+  - Replaced ambiguous button hitboxes with full-row `.contentShape(Rectangle())` and `.buttonStyle(.plain)` so tapping anywhere in the row (including padding and labels) triggers actions reliably.
+  - Added visual confirmation banner ("Refilled! (+20 All Blocks)") with haptic feedback to the Creative Refill action.
+  - Added dedicated `-` and `+` stepper tap buttons directly on slider rows (Render Distance, Look Sensitivity, Movement Speed, HUD Opacity) with 22pt touch targets to eliminate touch contention between sliders and vertical list scrolling.
+- **AI Studio Navigation & Segmented Picker Glitch**:
+  - Converted sub-sheets (Character Skins, Texture Packs, AI Studio) from stacked modal sheets to fluid `NavigationLink` transitions inside `InGameSettingsSheet`, completely eliminating iOS sheet presentation freezes and touch dropping.
+  - Replaced the glitchy native segmented picker in `AIStudioSheet` with custom, high-contrast, responsive tab buttons with full touch targets and tactile feedback.
+  - Added direct tab routing (`AIStudioSheet(initialTab:)`) so clicking "✨ AI Skin Generator" from the Character Skins menu immediately lands on the Skin Generator tab rather than defaulting to the World Generator tab.
 - **Main Menu Responsive Scaling**:
   - Re-engineered `MainMenuView` with `GeometryReader`, adaptive safe-area insets (notch / Dynamic Island), responsive 2-column landscape layout, and scrollable fallback to eliminate button or banner clipping across all iPhone and iPad resolutions.
 - **Settings Subsheet Stacking**:

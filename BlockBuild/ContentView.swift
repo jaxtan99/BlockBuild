@@ -1033,7 +1033,6 @@ struct SavedWorldsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var worldNameInput: String = ""
     @State private var selectedWorldType: WorldType = .standard
-    @State private var localShowingAIStudio = false
 
     var body: some View {
         NavigationStack {
@@ -1069,8 +1068,8 @@ struct SavedWorldsSheet: View {
 
                 Section("Create New World") {
                     VStack(alignment: .leading, spacing: 10) {
-                        Button {
-                            localShowingAIStudio = true
+                        NavigationLink {
+                            AIStudioSheet(world: world, initialTab: .worlds)
                         } label: {
                             HStack {
                                 ZStack {
@@ -1094,6 +1093,7 @@ struct SavedWorldsSheet: View {
                                     .foregroundColor(.secondary)
                                     .font(.system(size: 12))
                             }
+                            .contentShape(Rectangle())
                             .padding(.vertical, 8)
                             .padding(.horizontal, 10)
                             .background(Color.purple.opacity(0.12))
@@ -1294,9 +1294,6 @@ struct SavedWorldsSheet: View {
             }
             .onAppear {
                 worldNameInput = ""
-            }
-            .sheet(isPresented: $localShowingAIStudio) {
-                AIStudioSheet(world: world)
             }
         }
     }
@@ -1642,7 +1639,6 @@ struct CharacterSkinsSheet: View {
     @ObservedObject var world: VoxelWorld
     @Binding var showingAIStudioSheet: Bool
     @Environment(\.dismiss) private var dismiss
-    @State private var localShowingAIStudio = false
 
     let columns = [
         GridItem(.adaptive(minimum: 155), spacing: 12)
@@ -1687,9 +1683,9 @@ struct CharacterSkinsSheet: View {
                             .stroke(Color.white.opacity(0.25), lineWidth: 1)
                     )
 
-                    // AI Skin Generator Button
-                    Button {
-                        localShowingAIStudio = true
+                    // AI Skin Generator Button (Direct NavigationLink directly to Skin Generator)
+                    NavigationLink {
+                        AIStudioSheet(world: world, initialTab: .skins)
                     } label: {
                         HStack {
                             ZStack {
@@ -1719,7 +1715,9 @@ struct CharacterSkinsSheet: View {
                             RoundedRectangle(cornerRadius: 12)
                                 .stroke(Color.cyan.opacity(0.4), lineWidth: 1)
                         )
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
 
                     // Saved AI Skins Grid
                     if !world.customSkins.isEmpty {
@@ -1732,6 +1730,7 @@ struct CharacterSkinsSheet: View {
                                 ForEach(world.customSkins) { skin in
                                     let isEquipped = (world.activeCustomSkin?.id == skin.id)
                                     Button {
+                                        UISelectionFeedbackGenerator().selectionChanged()
                                         world.equipCustomSkin(skin)
                                     } label: {
                                         VStack(spacing: 8) {
@@ -1778,7 +1777,9 @@ struct CharacterSkinsSheet: View {
                                             RoundedRectangle(cornerRadius: 10)
                                                 .stroke(isEquipped ? Color.green.opacity(0.6) : Color.white.opacity(0.2), lineWidth: 1)
                                         )
+                                        .contentShape(Rectangle())
                                     }
+                                    .buttonStyle(.plain)
                                 }
                             }
                         }
@@ -1798,6 +1799,7 @@ struct CharacterSkinsSheet: View {
                         ForEach(PlayerSkin.allCases) { skin in
                             let isEquipped = (world.activeCustomSkin == nil && world.selectedSkin == skin)
                             Button {
+                                UISelectionFeedbackGenerator().selectionChanged()
                                 world.setSkin(skin)
                             } label: {
                                 VStack(spacing: 10) {
@@ -1842,7 +1844,9 @@ struct CharacterSkinsSheet: View {
                                     RoundedRectangle(cornerRadius: 12)
                                         .stroke(isEquipped ? Color.green : Color.white.opacity(0.25), lineWidth: isEquipped ? 2 : 1)
                                 )
+                                .contentShape(Rectangle())
                             }
+                            .buttonStyle(.plain)
                         }
                     }
                 }
@@ -1858,9 +1862,6 @@ struct CharacterSkinsSheet: View {
                     }
                     .font(.system(size: 13, weight: .bold, design: .monospaced))
                 }
-            }
-            .sheet(isPresented: $localShowingAIStudio) {
-                AIStudioSheet(world: world)
             }
         }
     }
@@ -2012,14 +2013,6 @@ struct TexturePacksSheet: View {
     }
 }
 
-enum SettingsSubsheet: Identifiable {
-    case skins
-    case texturePacks
-    case aiStudio
-
-    var id: Int { hashValue }
-}
-
 struct InGameSettingsSheet: View {
     @ObservedObject var world: VoxelWorld
     @Binding var showingSkinsSheet: Bool
@@ -2027,25 +2020,28 @@ struct InGameSettingsSheet: View {
     @Binding var showingTexturePacksSheet: Bool
     @Binding var showingAIStudioSheet: Bool
     @Environment(\.dismiss) private var dismiss
-    @State private var activeSubsheet: SettingsSubsheet? = nil
+    @State private var showRefillToast: Bool = false
 
     var body: some View {
         NavigationStack {
             List {
-                Section {
-                    if world.isInGame {
+                if world.isInGame {
+                    Section {
                         Button {
                             dismiss()
                         } label: {
                             HStack {
                                 Image(systemName: "play.fill")
                                     .foregroundColor(.green)
+                                    .frame(width: 24)
                                 Text("Resume Game")
                                     .font(.system(size: 14, weight: .bold, design: .monospaced))
                                     .foregroundColor(.white)
                                 Spacer()
                             }
+                            .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
 
                         Button {
                             dismiss()
@@ -2054,26 +2050,29 @@ struct InGameSettingsSheet: View {
                             HStack {
                                 Image(systemName: "house.fill")
                                     .foregroundColor(.red)
+                                    .frame(width: 24)
                                 Text("Save & Leave to Menu")
                                     .font(.system(size: 14, weight: .bold, design: .monospaced))
                                     .foregroundColor(.red)
                                 Spacer()
                             }
+                            .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
+                    } header: {
+                        Text("Game Session")
                     }
-                } header: {
-                    Text("Game Session")
                 }
 
                 Section {
-                    Button {
-                        activeSubsheet = .skins
+                    NavigationLink {
+                        CharacterSkinsSheet(world: world, showingAIStudioSheet: $showingAIStudioSheet)
                     } label: {
-                        HStack {
+                        HStack(spacing: 12) {
                             if let custom = world.activeCustomSkin {
-                                CharacterAvatarPreview(customSkin: custom, size: 24)
+                                CharacterAvatarPreview(customSkin: custom, size: 26)
                             } else {
-                                CharacterAvatarPreview(skin: world.selectedSkin, size: 24)
+                                CharacterAvatarPreview(skin: world.selectedSkin, size: 26)
                             }
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Change Character Skin")
@@ -2084,19 +2083,18 @@ struct InGameSettingsSheet: View {
                                     .foregroundColor(.cyan)
                             }
                             Spacer()
-                            Image(systemName: "chevron.right")
-                                .foregroundColor(.gray)
                         }
+                        .contentShape(Rectangle())
                     }
 
-                    Button {
-                        activeSubsheet = .texturePacks
+                    NavigationLink {
+                        TexturePacksSheet(world: world)
                     } label: {
-                        HStack {
+                        HStack(spacing: 12) {
                             ZStack {
                                 RoundedRectangle(cornerRadius: 6)
                                     .fill(world.currentTexturePack.themeColor.opacity(0.25))
-                                    .frame(width: 24, height: 24)
+                                    .frame(width: 26, height: 26)
                                 Image(systemName: world.currentTexturePack.iconName)
                                     .foregroundColor(world.currentTexturePack.themeColor)
                                     .font(.system(size: 13, weight: .bold))
@@ -2110,19 +2108,18 @@ struct InGameSettingsSheet: View {
                                     .foregroundColor(.cyan)
                             }
                             Spacer()
-                            Image(systemName: "chevron.right")
-                                .foregroundColor(.gray)
                         }
+                        .contentShape(Rectangle())
                     }
 
-                    Button {
-                        activeSubsheet = .aiStudio
+                    NavigationLink {
+                        AIStudioSheet(world: world, initialTab: .worlds)
                     } label: {
-                        HStack {
+                        HStack(spacing: 12) {
                             ZStack {
                                 RoundedRectangle(cornerRadius: 6)
                                     .fill(Color.purple.opacity(0.25))
-                                    .frame(width: 24, height: 24)
+                                    .frame(width: 26, height: 26)
                                 Image(systemName: "sparkles")
                                     .foregroundColor(.purple)
                                     .font(.system(size: 13, weight: .bold))
@@ -2136,9 +2133,8 @@ struct InGameSettingsSheet: View {
                                     .foregroundColor(.cyan)
                             }
                             Spacer()
-                            Image(systemName: "chevron.right")
-                                .foregroundColor(.gray)
                         }
+                        .contentShape(Rectangle())
                     }
 
                     if world.isInGame {
@@ -2148,30 +2144,46 @@ struct InGameSettingsSheet: View {
                                 world.isEditingControls = true
                             }
                         } label: {
-                            HStack {
+                            HStack(spacing: 12) {
                                 Image(systemName: "slider.horizontal.3")
                                     .foregroundColor(.yellow)
+                                    .frame(width: 26)
                                 Text("Customize HUD Controls")
                                     .font(.system(size: 13, weight: .bold, design: .monospaced))
                                     .foregroundColor(.white)
                                 Spacer()
                                 Image(systemName: "chevron.right")
                                     .foregroundColor(.gray)
+                                    .font(.system(size: 12))
                             }
+                            .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
 
                         Button {
                             world.creativeRefill()
+                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                            withAnimation(.spring(response: 0.3)) {
+                                showRefillToast = true
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
+                                withAnimation {
+                                    showRefillToast = false
+                                }
+                            }
                         } label: {
-                            HStack {
-                                Image(systemName: "plus.square.fill")
-                                    .foregroundColor(.green)
-                                Text("Creative Refill (+20 All Blocks)")
+                            HStack(spacing: 12) {
+                                Image(systemName: showRefillToast ? "checkmark.circle.fill" : "plus.square.fill")
+                                    .foregroundColor(showRefillToast ? .cyan : .green)
+                                    .frame(width: 26)
+                                Text(showRefillToast ? "Refilled! (+20 All Blocks)" : "Creative Refill (+20 All Blocks)")
                                     .font(.system(size: 13, weight: .bold, design: .monospaced))
-                                    .foregroundColor(.white)
+                                    .foregroundColor(showRefillToast ? .cyan : .white)
                                 Spacer()
                             }
+                            .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
                     }
                 } header: {
                     Text("Appearance & Customization")
@@ -2220,14 +2232,40 @@ struct InGameSettingsSheet: View {
                                 .font(.system(size: 11, weight: .bold, design: .monospaced))
                                 .foregroundColor(.cyan)
                         }
-                        Slider(
-                            value: Binding(
-                                get: { Double(world.renderDistance) },
-                                set: { world.setRenderDistance(Int($0)) }
-                            ),
-                            in: 2...8,
-                            step: 1
-                        )
+
+                        HStack(spacing: 10) {
+                            Button {
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                world.setRenderDistance(world.renderDistance - 1)
+                            } label: {
+                                Image(systemName: "minus.circle.fill")
+                                    .font(.system(size: 22))
+                                    .foregroundColor(world.renderDistance > 2 ? .cyan : .gray.opacity(0.4))
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(world.renderDistance <= 2)
+
+                            Slider(
+                                value: Binding(
+                                    get: { Double(world.renderDistance) },
+                                    set: { world.setRenderDistance(Int($0)) }
+                                ),
+                                in: 2...8,
+                                step: 1
+                            )
+
+                            Button {
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                world.setRenderDistance(world.renderDistance + 1)
+                            } label: {
+                                Image(systemName: "plus.circle.fill")
+                                    .font(.system(size: 22))
+                                    .foregroundColor(world.renderDistance < 8 ? .cyan : .gray.opacity(0.4))
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(world.renderDistance >= 8)
+                        }
+
                         HStack {
                             Text("2 Chunks (Fast)")
                                 .font(.system(size: 9, design: .monospaced))
@@ -2287,7 +2325,31 @@ struct InGameSettingsSheet: View {
                                 .font(.system(size: 11, weight: .bold, design: .monospaced))
                                 .foregroundColor(.cyan)
                         }
-                        Slider(value: $world.controlLayout.lookSensitivity, in: 0.4...2.5, step: 0.1)
+                        HStack(spacing: 10) {
+                            Button {
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                world.controlLayout.lookSensitivity = max(0.4, (world.controlLayout.lookSensitivity * 10 - 1).rounded() / 10)
+                            } label: {
+                                Image(systemName: "minus.circle.fill")
+                                    .font(.system(size: 22))
+                                    .foregroundColor(world.controlLayout.lookSensitivity > 0.4 ? .cyan : .gray.opacity(0.4))
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(world.controlLayout.lookSensitivity <= 0.4)
+
+                            Slider(value: $world.controlLayout.lookSensitivity, in: 0.4...2.5, step: 0.1)
+
+                            Button {
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                world.controlLayout.lookSensitivity = min(2.5, (world.controlLayout.lookSensitivity * 10 + 1).rounded() / 10)
+                            } label: {
+                                Image(systemName: "plus.circle.fill")
+                                    .font(.system(size: 22))
+                                    .foregroundColor(world.controlLayout.lookSensitivity < 2.5 ? .cyan : .gray.opacity(0.4))
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(world.controlLayout.lookSensitivity >= 2.5)
+                        }
                     }
 
                     VStack(alignment: .leading, spacing: 6) {
@@ -2299,7 +2361,31 @@ struct InGameSettingsSheet: View {
                                 .font(.system(size: 11, weight: .bold, design: .monospaced))
                                 .foregroundColor(.cyan)
                         }
-                        Slider(value: $world.controlLayout.movementSpeedMultiplier, in: 0.1...2.0, step: 0.02)
+                        HStack(spacing: 10) {
+                            Button {
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                world.controlLayout.movementSpeedMultiplier = max(0.1, world.controlLayout.movementSpeedMultiplier - 0.05)
+                            } label: {
+                                Image(systemName: "minus.circle.fill")
+                                    .font(.system(size: 22))
+                                    .foregroundColor(world.controlLayout.movementSpeedMultiplier > 0.1 ? .cyan : .gray.opacity(0.4))
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(world.controlLayout.movementSpeedMultiplier <= 0.1)
+
+                            Slider(value: $world.controlLayout.movementSpeedMultiplier, in: 0.1...2.0, step: 0.02)
+
+                            Button {
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                world.controlLayout.movementSpeedMultiplier = min(2.0, world.controlLayout.movementSpeedMultiplier + 0.05)
+                            } label: {
+                                Image(systemName: "plus.circle.fill")
+                                    .font(.system(size: 22))
+                                    .foregroundColor(world.controlLayout.movementSpeedMultiplier < 2.0 ? .cyan : .gray.opacity(0.4))
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(world.controlLayout.movementSpeedMultiplier >= 2.0)
+                        }
                     }
 
                     VStack(alignment: .leading, spacing: 6) {
@@ -2311,7 +2397,31 @@ struct InGameSettingsSheet: View {
                                 .font(.system(size: 11, weight: .bold, design: .monospaced))
                                 .foregroundColor(.cyan)
                         }
-                        Slider(value: $world.controlLayout.controlOpacity, in: 0.3...1.0, step: 0.05)
+                        HStack(spacing: 10) {
+                            Button {
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                world.controlLayout.controlOpacity = max(0.3, world.controlLayout.controlOpacity - 0.05)
+                            } label: {
+                                Image(systemName: "minus.circle.fill")
+                                    .font(.system(size: 22))
+                                    .foregroundColor(world.controlLayout.controlOpacity > 0.3 ? .cyan : .gray.opacity(0.4))
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(world.controlLayout.controlOpacity <= 0.3)
+
+                            Slider(value: $world.controlLayout.controlOpacity, in: 0.3...1.0, step: 0.05)
+
+                            Button {
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                world.controlLayout.controlOpacity = min(1.0, world.controlLayout.controlOpacity + 0.05)
+                            } label: {
+                                Image(systemName: "plus.circle.fill")
+                                    .font(.system(size: 22))
+                                    .foregroundColor(world.controlLayout.controlOpacity < 1.0 ? .cyan : .gray.opacity(0.4))
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(world.controlLayout.controlOpacity >= 1.0)
+                        }
                     }
                 } header: {
                     Text("Controls & Audio")
@@ -2325,19 +2435,6 @@ struct InGameSettingsSheet: View {
                         dismiss()
                     }
                     .font(.system(size: 13, weight: .bold, design: .monospaced))
-                }
-            }
-            .sheet(item: $activeSubsheet) { sheet in
-                switch sheet {
-                case .skins:
-                    CharacterSkinsSheet(world: world, showingAIStudioSheet: Binding(
-                        get: { activeSubsheet == .aiStudio },
-                        set: { if $0 { activeSubsheet = .aiStudio } }
-                    ))
-                case .texturePacks:
-                    TexturePacksSheet(world: world)
-                case .aiStudio:
-                    AIStudioSheet(world: world)
                 }
             }
         }
