@@ -10,7 +10,7 @@ struct ContentView: View {
     @State private var showingSettingsSheet = false
     @State private var showingSkinsSheet = false
     @State private var showingTexturePacksSheet = false
-    @State private var showingAIStudioSheet = false
+    @State private var showingSkinMakerSheet = false
     @State private var showCameraFlash = false
 
     // Temporary drag states while dragging HUD elements in Edit Controls mode
@@ -29,7 +29,7 @@ struct ContentView: View {
                     showingSkinsSheet: $showingSkinsSheet,
                     showingMultiplayerSheet: $showingMultiplayerSheet,
                     showingSettingsSheet: $showingSettingsSheet,
-                    showingAIStudioSheet: $showingAIStudioSheet
+                    showingSkinMakerSheet: $showingSkinMakerSheet
                 )
             } else {
                 inGameWorldView
@@ -70,7 +70,7 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $showingWorldsSheet) {
-            SavedWorldsSheet(world: world, showingAIStudioSheet: $showingAIStudioSheet)
+            SavedWorldsSheet(world: world)
         }
         .sheet(isPresented: $showingMultiplayerSheet) {
             LocalMultiplayerSheet(world: world)
@@ -81,17 +81,17 @@ struct ContentView: View {
                 showingSkinsSheet: $showingSkinsSheet,
                 showingWorldsSheet: $showingWorldsSheet,
                 showingTexturePacksSheet: $showingTexturePacksSheet,
-                showingAIStudioSheet: $showingAIStudioSheet
+                showingSkinMakerSheet: $showingSkinMakerSheet
             )
         }
         .sheet(isPresented: $showingSkinsSheet) {
-            CharacterSkinsSheet(world: world, showingAIStudioSheet: $showingAIStudioSheet)
+            CharacterSkinsSheet(world: world, showingSkinMakerSheet: $showingSkinMakerSheet)
         }
         .sheet(isPresented: $showingTexturePacksSheet) {
-            TexturePacksSheet(world: world)
+            TexturePacksSheet(world: world, showingSkinMakerSheet: $showingSkinMakerSheet)
         }
-        .sheet(isPresented: $showingAIStudioSheet) {
-            AIStudioSheet(world: world)
+        .sheet(isPresented: $showingSkinMakerSheet) {
+            SkinAndTextureMakerView(world: world)
         }
         .onChange(of: showingSettingsSheet) { _ in
             world.resetInputState()
@@ -113,7 +113,7 @@ struct ContentView: View {
             world.resetInputState()
             joystickOffset = .zero
         }
-        .onChange(of: showingAIStudioSheet) { _ in
+        .onChange(of: showingSkinMakerSheet) { _ in
             world.resetInputState()
             joystickOffset = .zero
         }
@@ -125,7 +125,7 @@ struct ContentView: View {
         showingSettingsSheet = false
         showingSkinsSheet = false
         showingTexturePacksSheet = false
-        showingAIStudioSheet = false
+        showingSkinMakerSheet = false
     }
 
     private func triggerCameraFlash() {
@@ -337,23 +337,7 @@ struct ContentView: View {
                             .cornerRadius(8)
                     }
 
-                    // 4. Camera Perspective / View (1st Person, 3rd Person Back, 3rd Person Front)
-                    Button {
-                        world.toggleCameraPerspective()
-                    } label: {
-                        Label(
-                            world.cameraPerspective == .firstPerson ? "1st View" : (world.cameraPerspective == .thirdPersonBack ? "3rd Back" : "3rd Front"),
-                            systemImage: world.cameraPerspective == .firstPerson ? "person.fill" : (world.cameraPerspective == .thirdPersonBack ? "figure.walk" : "face.smiling.fill")
-                        )
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 7)
-                        .background(world.cameraPerspective == .firstPerson ? Color.blue.opacity(0.85) : Color.orange.opacity(0.90))
-                        .cornerRadius(8)
-                    }
-
-                    // 5. Photo / Screenshot (Pure 3D world with no buttons, crosshairs, or UI)
+                    // 4. Photo / Screenshot (Pure 3D world with no buttons, crosshairs, or UI)
                     Button {
                         triggerCameraFlash()
                         world.captureCleanScreenshot()
@@ -839,187 +823,211 @@ struct LocalMultiplayerSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var playerNameInput: String = ""
 
+    @ObservedObject private var themeMgr = MenuThemeManager.shared
+
     var body: some View {
-        NavigationStack {
-            List {
-                Section("Signal Status (Local Network)") {
-                    Toggle(isOn: Binding(
-                        get: { world.isMultiplayerEnabled },
-                        set: { world.toggleMultiplayerEnabled($0) }
-                    )) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: 8) {
-                                Circle()
-                                    .fill(world.isMultiplayerEnabled ? Color.green : Color.gray)
-                                    .frame(width: 10, height: 10)
-                                Text("Multiplayer Mode")
-                                    .font(.system(size: 14, weight: .bold, design: .monospaced))
-                            }
-                            Text(world.isMultiplayerEnabled ? "Broadcasts signal when in a world so nearby players can join" : "Multiplayer disabled")
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundColor(.secondary)
-                        }
-                    }
+        let theme = themeMgr.currentTheme
+
+        GameMenuContainer(
+            title: "LOCAL MULTIPLAYER",
+            subtitle: "Wi-Fi Co-Op & World Sync",
+            icon: "person.2.wave.2.fill",
+            onDismiss: { dismiss() }
+        ) {
+            // Signal Radar & Status Card
+            GameCard(
+                title: "SIGNAL RADAR",
+                icon: "antenna.radiowaves.left.and.right",
+                badge: world.isMultiplayerEnabled ? "ACTIVE" : "OFF"
+            ) {
+                VStack(spacing: 8) {
+                    GameToggleRow(
+                        title: "Multiplayer Mode",
+                        subtitle: "Broadcast signal on local Wi-Fi to join friends",
+                        icon: "wifi",
+                        isOn: Binding(
+                            get: { world.isMultiplayerEnabled },
+                            set: { world.toggleMultiplayerEnabled($0) }
+                        )
+                    )
 
                     if world.isMultiplayerEnabled {
-                        if world.isInGame {
-                            HStack(spacing: 8) {
-                                Image(systemName: "antenna.radiowaves.left.and.right")
-                                    .foregroundColor(.green)
-                                Text("World Signal Broadcasting")
-                                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                    .foregroundColor(.green)
-                                Spacer()
-                                Text("IN WORLD")
-                                    .font(.system(size: 10, weight: .heavy, design: .monospaced))
-                                    .foregroundColor(.green)
-                            }
-                        } else {
-                            HStack(spacing: 8) {
-                                Image(systemName: "info.circle.fill")
-                                    .foregroundColor(.yellow)
-                                Text("Signal starts automatically when you enter a world.")
-                                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                    .foregroundColor(.yellow)
-                            }
+                        HStack(spacing: 8) {
+                            Circle()
+                                .fill(world.isInGame ? Color.green : Color.yellow)
+                                .frame(width: 8, height: 8)
+                            Text(world.isInGame ? "Broadcasting '\(world.currentWorldName)' to nearby devices" : "Signal ready • Join or open a world to broadcast")
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .foregroundColor(world.isInGame ? .green : .yellow)
+                            Spacer()
+                            Text(world.isInGame ? "IN WORLD" : "READY")
+                                .font(.system(size: 9, weight: .black, design: .monospaced))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background((world.isInGame ? Color.green : Color.yellow).opacity(0.18))
+                                .foregroundColor(world.isInGame ? .green : .yellow)
+                                .cornerRadius(4)
                         }
+                        .padding(.top, 4)
                     }
                 }
+            }
 
-                Section("Your Multiplayer Profile") {
+            // Player Profile Card
+            GameCard(title: "YOUR PLAYER PROFILE", icon: "person.crop.circle") {
+                VStack(spacing: 10) {
                     HStack(spacing: 12) {
-                        CharacterAvatarPreview(skin: world.selectedSkin, size: 30)
+                        if let custom = world.activeCustomSkin {
+                            CharacterAvatarPreview(customSkin: custom, size: 36)
+                        } else {
+                            CharacterAvatarPreview(skin: world.selectedSkin, size: 36)
+                        }
+
                         VStack(alignment: .leading, spacing: 2) {
-                            TextField("Display Name", text: $playerNameInput)
-                                .font(.system(size: 13, weight: .bold, design: .monospaced))
-                                .autocorrectionDisabled()
-                                .textInputAutocapitalization(.never)
-                                .onSubmit {
-                                    world.updateLocalPlayerName(playerNameInput)
-                                }
+                            Text("PLAYER DISPLAY NAME")
+                                .font(.system(size: 9.5, weight: .black, design: .monospaced))
+                                .foregroundColor(theme.secondaryAccent)
                             Text("Current World: \(world.currentWorldName)")
                                 .font(.system(size: 10, design: .monospaced))
-                                .foregroundColor(.secondary)
+                                .foregroundColor(.white.opacity(0.65))
                         }
+                        Spacer()
+                    }
+
+                    HStack(spacing: 8) {
+                        GameTextField(placeholder: "Display Name...", text: $playerNameInput, icon: "person.fill") {
+                            world.updateLocalPlayerName(playerNameInput)
+                        }
+
                         if playerNameInput != world.localPlayerName && !playerNameInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            Button("Save") {
+                            GameSmallButton(title: "Save", icon: "checkmark", color: theme.primaryAccent, isProminent: true) {
                                 world.updateLocalPlayerName(playerNameInput)
                             }
-                            .font(.system(size: 11, weight: .bold, design: .monospaced))
-                            .buttonStyle(.borderedProminent)
-                            .tint(.green)
                         }
                     }
                 }
+            }
 
-                Section("Connected Players (\(world.connectedPlayerNames.count + 1))") {
+            // Connected Players Card
+            GameCard(
+                title: "CONNECTED PLAYERS (\(world.connectedPlayerNames.count + 1))",
+                icon: "person.3.fill",
+                badge: "\(world.connectedPlayerNames.count + 1) ACTIVE"
+            ) {
+                VStack(spacing: 8) {
                     HStack {
                         Image(systemName: "person.fill.checkmark")
                             .foregroundColor(.green)
                         Text("\(world.localPlayerName) (You)")
-                            .font(.system(size: 13, weight: .bold, design: .monospaced))
+                            .font(.system(size: 12, weight: .bold, design: .monospaced))
+                            .foregroundColor(.white)
                         Spacer()
                         Text(world.isHostingMultiplayer ? "HOST" : "GUEST")
-                            .font(.system(size: 10, weight: .black, design: .monospaced))
-                            .foregroundColor(world.isHostingMultiplayer ? .green : .cyan)
+                            .font(.system(size: 9, weight: .black, design: .monospaced))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(theme.primaryAccent.opacity(0.2))
+                            .foregroundColor(theme.primaryAccent)
+                            .cornerRadius(4)
                     }
+                    .padding(8)
+                    .background(theme.buttonBackground.opacity(0.5))
+                    .cornerRadius(8)
 
                     ForEach(world.connectedPlayerNames, id: \.self) { peerName in
                         HStack {
                             Image(systemName: "person.wave.2.fill")
                                 .foregroundColor(.cyan)
                             Text(peerName)
-                                .font(.system(size: 13, weight: .bold, design: .monospaced))
+                                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                                .foregroundColor(.white)
                             Spacer()
-                            Text("IN WORLD")
-                                .font(.system(size: 10, weight: .black, design: .monospaced))
+                            Text("CONNECTED")
+                                .font(.system(size: 9, weight: .black, design: .monospaced))
                                 .foregroundColor(.cyan)
                         }
+                        .padding(8)
+                        .background(theme.buttonBackground.opacity(0.5))
+                        .cornerRadius(8)
                     }
 
                     if !world.connectedPlayerNames.isEmpty {
-                        Button(role: .destructive) {
+                        GameButton(title: "Disconnect from Session", icon: "xmark.circle.fill", isDestructive: true) {
                             world.disconnectMultiplayer()
-                        } label: {
-                            Label("Disconnect from Session", systemImage: "xmark.circle.fill")
-                                .font(.system(size: 12, weight: .bold, design: .monospaced))
                         }
+                        .padding(.top, 4)
                     }
                 }
+            }
 
-                Section("Nearby BlockBuild Signals & Worlds (\(world.discoveredHosts.count))") {
+            // Nearby Discovered Worlds Card
+            GameCard(
+                title: "NEARBY WORLDS (\(world.discoveredHosts.count))",
+                icon: "antenna.radiowaves.left.and.right.circle",
+                badge: world.discoveredHosts.isEmpty ? "LISTENING" : "FOUND"
+            ) {
+                VStack(spacing: 8) {
                     if world.discoveredHosts.isEmpty {
                         VStack(alignment: .leading, spacing: 6) {
                             HStack(spacing: 10) {
                                 ProgressView()
-                                Text("Listening for nearby BlockBuild signals...")
-                                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                                    .tint(theme.primaryAccent)
+                                Text("Scanning for nearby BlockBuild worlds...")
+                                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                    .foregroundColor(.white.opacity(0.85))
                             }
-                            Text("When another device has BlockBuild open on the same Wi-Fi, their world will appear here and pop up on screen.")
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundColor(.secondary)
+                            Text("When friends launch BlockBuild on the same Wi-Fi, their world appears here instantly.")
+                                .font(.system(size: 9.5, design: .monospaced))
+                                .foregroundColor(.white.opacity(0.60))
                         }
-                        .padding(.vertical, 6)
+                        .padding(8)
                     } else {
                         ForEach(world.discoveredHosts) { host in
-                            HStack(spacing: 12) {
+                            HStack(spacing: 10) {
                                 CharacterAvatarPreview(skin: host.skin, size: 28)
-                                VStack(alignment: .leading, spacing: 3) {
+
+                                VStack(alignment: .leading, spacing: 2) {
                                     Text(host.worldName)
-                                        .font(.system(size: 14, weight: .bold, design: .monospaced))
-                                    HStack(spacing: 6) {
+                                        .font(.system(size: 12.5, weight: .bold, design: .monospaced))
+                                        .foregroundColor(.white)
+                                    HStack(spacing: 5) {
                                         Text("By \(host.playerName)")
-                                            .font(.system(size: 11, design: .monospaced))
-                                            .foregroundColor(.secondary)
+                                            .font(.system(size: 9.5, design: .monospaced))
+                                            .foregroundColor(.white.opacity(0.7))
                                         Text(host.isInGame ? "• IN GAME" : "• IN MENU")
-                                            .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                                            .font(.system(size: 8.5, weight: .heavy, design: .monospaced))
                                             .foregroundColor(host.isInGame ? .green : .blue)
                                     }
                                 }
+
                                 Spacer()
+
                                 if host.isInGame {
-                                    Button {
+                                    GameSmallButton(title: "Join", icon: "arrow.right.circle.fill", color: .green, isProminent: true) {
                                         world.joinDiscoveredHost(host)
                                         dismiss()
-                                    } label: {
-                                        Text("Join World")
-                                            .font(.system(size: 12, weight: .bold, design: .monospaced))
                                     }
-                                    .buttonStyle(.borderedProminent)
-                                    .tint(.green)
                                 } else {
-                                    Button {
+                                    GameSmallButton(title: "Invite", icon: "paperplane.fill", color: .cyan) {
                                         world.invitePeerToCurrentWorld(host.peerID)
-                                    } label: {
-                                        Text("Invite")
-                                            .font(.system(size: 12, weight: .bold, design: .monospaced))
                                     }
-                                    .buttonStyle(.bordered)
-                                    .tint(.cyan)
                                 }
                             }
-                            .padding(.vertical, 4)
+                            .padding(8)
+                            .background(theme.buttonBackground.opacity(0.6))
+                            .cornerRadius(8)
                         }
                     }
                 }
             }
-            .navigationTitle("Local Multiplayer")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") {
-                        dismiss()
-                    }
-                }
-            }
-            .onAppear {
-                playerNameInput = world.localPlayerName
-                world.startMultiplayerServices()
-            }
-            .onChange(of: world.isInGame) { inGame in
-                if inGame {
-                    dismiss()
-                }
+        }
+        .onAppear {
+            playerNameInput = world.localPlayerName
+            world.startMultiplayerServices()
+        }
+        .onChange(of: world.isInGame) { inGame in
+            if inGame {
+                dismiss()
             }
         }
     }
@@ -1029,273 +1037,371 @@ struct LocalMultiplayerSheet: View {
 
 struct SavedWorldsSheet: View {
     @ObservedObject var world: VoxelWorld
-    @Binding var showingAIStudioSheet: Bool
     @Environment(\.dismiss) private var dismiss
+
+    @ObservedObject private var themeMgr = MenuThemeManager.shared
+
     @State private var worldNameInput: String = ""
     @State private var selectedWorldType: WorldType = .standard
+    @State private var aiPrompt: String = ""
+    @State private var generatedCustomWorld: CustomWorldType? = nil
+    @State private var isSynthesizingAI: Bool = false
 
     var body: some View {
-        NavigationStack {
-            List {
-                Section("Current Active World (Auto-Saved)") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(world.currentWorldName)
-                                    .font(.system(size: 16, weight: .bold, design: .monospaced))
-                                Text("\(world.currentWorldType.displayName) • Seed #\(world.worldSeed)")
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .foregroundColor(.secondary)
-                            }
-                            Spacer()
-                            Button {
-                                world.saveCurrentWorld(customName: worldNameInput)
-                                dismiss()
-                            } label: {
-                                Label("Save Now", systemImage: "square.and.arrow.down.fill")
-                                    .font(.system(size: 12, weight: .bold, design: .monospaced))
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .tint(.purple)
+        let theme = themeMgr.currentTheme
+
+        GameMenuContainer(
+            title: "BLOCKBUILD WORLDS",
+            subtitle: "Create, Synthesize & Load Voxel Worlds",
+            icon: "globe.americas.fill",
+            onDismiss: { dismiss() }
+        ) {
+            // 1. Current Active World Card
+            GameCard(
+                title: "CURRENT ACTIVE WORLD",
+                icon: "cube.fill",
+                badge: "SEED #\(world.worldSeed)"
+            ) {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(world.currentWorldName.uppercased())
+                                .font(.system(size: 14, weight: .black, design: .monospaced))
+                                .foregroundColor(.white)
+                            Text("\(world.currentWorldType.displayName) • Seed #\(world.worldSeed)")
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundColor(theme.primaryAccent)
                         }
-
-                        TextField("Rename current world (optional)...", text: $worldNameInput)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(size: 13, design: .monospaced))
+                        Spacer()
+                        GameSmallButton(title: "Save Now", icon: "square.and.arrow.down.fill", color: theme.primaryAccent, isProminent: true) {
+                            world.saveCurrentWorld(customName: worldNameInput)
+                            dismiss()
+                        }
                     }
-                    .padding(.vertical, 4)
-                }
 
-                Section("Create New World") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        NavigationLink {
-                            AIStudioSheet(world: world, initialTab: .worlds)
+                    HStack(spacing: 8) {
+                        GameTextField(placeholder: "Rename current world (optional)...", text: $worldNameInput, icon: "pencil")
+                    }
+                }
+            }
+
+            // 2. ✨ AI World Generator (Integrated directly into Worlds Menu)
+            GameCard(
+                title: "✨ AI WORLD GENERATOR",
+                icon: "sparkles",
+                badge: "ON-DEVICE AI"
+            ) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Describe any world in plain English. The AI synthesizes terrain, custom skies, rivers & waterfalls instantly.")
+                        .font(.system(size: 10.5, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.80))
+
+                    GameTextField(
+                        placeholder: "e.g. Alpine mountain peaks with rushing waterfalls and deep rivers...",
+                        text: $aiPrompt,
+                        icon: "wand.and.stars"
+                    ) {
+                        synthesizeAndPlayAIWorld()
+                    }
+
+                    // Inspiration Chips
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            inspirationChip("🌊 Cascading Waterfalls", prompt: "Towering mountain cliffs with huge cascading waterfalls, deep plunge pools, and rushing rivers")
+                            inspirationChip("🏰 Medieval Villages", prompt: "Sprawling medieval village settlements with cobblestone town hall, watchtower, and glass cottages")
+                            inspirationChip("☁️ Celestial Sky Islands", prompt: "Floating celestial islands high in the sky with hanging vines, waterfalls pouring into the void, and twilight fog")
+                            inspirationChip("🔥 Volcanic Nether", prompt: "Fiery volcanic underworld with obsidian rocks, blazing lava pools, and crimson ash skies")
+                            inspirationChip("❄️ Alpine Glacier Peaks", prompt: "Gigantic snow-capped peaks with extreme vertical cliffs and frozen mountain waterfalls")
+                        }
+                    }
+
+                    HStack(spacing: 8) {
+                        Button {
+                            synthesizeAndPlayAIWorld()
                         } label: {
-                            HStack {
-                                ZStack {
-                                    Circle()
-                                        .fill(LinearGradient(colors: [.purple, .blue], startPoint: .topLeading, endPoint: .bottomTrailing))
-                                        .frame(width: 32, height: 32)
+                            HStack(spacing: 6) {
+                                if isSynthesizingAI {
+                                    ProgressView()
+                                        .tint(.white)
+                                } else {
                                     Image(systemName: "sparkles")
-                                        .foregroundColor(.white)
-                                        .font(.system(size: 14, weight: .bold))
                                 }
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text("✨ AI World Generator")
-                                        .font(.system(size: 13, weight: .bold, design: .monospaced))
-                                        .foregroundColor(.purple)
-                                    Text("Describe any world type in natural language")
-                                        .font(.system(size: 10, design: .monospaced))
-                                        .foregroundColor(.secondary)
-                                }
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .foregroundColor(.secondary)
-                                    .font(.system(size: 12))
+                                Text("SYNTHESIZE & PLAY")
+                                    .font(.system(size: 11, weight: .black, design: .monospaced))
                             }
-                            .contentShape(Rectangle())
-                            .padding(.vertical, 8)
-                            .padding(.horizontal, 10)
-                            .background(Color.purple.opacity(0.12))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 9)
+                            .background(
+                                LinearGradient(colors: [theme.primaryAccent, theme.secondaryAccent], startPoint: .leading, endPoint: .trailing)
+                            )
                             .cornerRadius(8)
-                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.purple.opacity(0.35), lineWidth: 1))
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.4), lineWidth: 1))
                         }
                         .buttonStyle(.plain)
+                        .disabled(aiPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
-                        if !world.customWorldTypes.isEmpty {
-                            Text("SAVED AI WORLD TYPES")
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                .foregroundColor(.purple)
-                                .padding(.top, 4)
+                        if let generated = generatedCustomWorld {
+                            GameSmallButton(title: "Save Type", icon: "bookmark.fill", color: theme.secondaryAccent) {
+                                world.saveCustomWorldType(generated)
+                            }
+                        }
+                    }
 
-                            ForEach(world.customWorldTypes) { custom in
-                                Button {
+                    // Preview of Generated AI World
+                    if let generated = generatedCustomWorld {
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(spacing: 8) {
+                                Image(systemName: generated.iconName)
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(theme.primaryAccent)
+                                Text(generated.name.uppercased())
+                                    .font(.system(size: 12, weight: .black, design: .monospaced))
+                                    .foregroundColor(.white)
+                                Spacer()
+                                if generated.hasWaterfalls {
+                                    Text("WATERFALLS")
+                                        .font(.system(size: 8.5, weight: .black, design: .monospaced))
+                                        .foregroundColor(.cyan)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(Color.cyan.opacity(0.2))
+                                        .cornerRadius(4)
+                                }
+                            }
+
+                            Text(generated.summary)
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundColor(.white.opacity(0.75))
+
+                            HStack(spacing: 6) {
+                                traitTag(icon: "square.fill", text: generated.surfaceBlock.fullName)
+                                traitTag(icon: "mountain.2.fill", text: "Height: \(Int(generated.baseHeight))")
+                                if generated.hasWaterfalls {
+                                    traitTag(icon: "water.waves", text: "Cascades: 95%")
+                                }
+                                if generated.hasVillages {
+                                    traitTag(icon: "house.fill", text: "Villages: \(Int(generated.villageDensity * 100))%")
+                                }
+                            }
+                        }
+                        .padding(10)
+                        .background(theme.buttonBackground.opacity(0.7))
+                        .cornerRadius(8)
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(theme.cardBorder, lineWidth: 1))
+                    }
+                }
+            }
+
+            // 3. Saved AI World Types (if any exist)
+            if !world.customWorldTypes.isEmpty {
+                GameCard(
+                    title: "SAVED AI WORLD TYPES (\(world.customWorldTypes.count))",
+                    icon: "sparkles.square.filled.on.square",
+                    badge: "AI PRESETS"
+                ) {
+                    VStack(spacing: 8) {
+                        ForEach(world.customWorldTypes) { custom in
+                            HStack(spacing: 10) {
+                                Image(systemName: custom.iconName)
+                                    .font(.system(size: 16, weight: .bold))
+                                    .foregroundColor(theme.primaryAccent)
+                                    .frame(width: 26)
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(custom.name)
+                                        .font(.system(size: 12, weight: .bold, design: .monospaced))
+                                        .foregroundColor(.white)
+                                    Text(custom.summary)
+                                        .font(.system(size: 9.5, design: .monospaced))
+                                        .foregroundColor(.white.opacity(0.65))
+                                        .lineLimit(1)
+                                }
+
+                                Spacer()
+
+                                GameSmallButton(title: "Play", icon: "play.fill", color: theme.primaryAccent, isProminent: true) {
                                     world.regenerateWithCustomWorld(custom)
                                     dismiss()
+                                }
+
+                                Button {
+                                    world.deleteCustomWorldType(id: custom.id)
                                 } label: {
-                                    HStack(spacing: 10) {
-                                        Image(systemName: custom.iconName)
-                                            .foregroundColor(.purple)
-                                            .font(.system(size: 16))
-                                            .frame(width: 28)
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(custom.name)
-                                                .font(.system(size: 12, weight: .bold, design: .monospaced))
-                                                .foregroundColor(.primary)
-                                            Text(custom.summary)
-                                                .font(.system(size: 9, design: .monospaced))
-                                                .foregroundColor(.secondary)
-                                                .lineLimit(1)
-                                        }
-                                        Spacer()
-                                        Text("GENERATE")
-                                            .font(.system(size: 9, weight: .black, design: .monospaced))
-                                            .foregroundColor(.green)
-                                            .padding(.horizontal, 8)
-                                            .padding(.vertical, 4)
-                                            .background(Color.green.opacity(0.15))
-                                            .cornerRadius(6)
+                                    Image(systemName: "trash")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.red.opacity(0.8))
+                                        .padding(6)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .padding(8)
+                            .background(theme.buttonBackground.opacity(0.55))
+                            .cornerRadius(8)
+                        }
+                    }
+                }
+            }
+
+            // 4. Standard World Types
+            GameCard(title: "STANDARD WORLD TYPES", icon: "globe.europe.africa.fill") {
+                VStack(spacing: 10) {
+                    // Type selector chips
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(WorldType.allCases) { type in
+                                let isSelected = (selectedWorldType == type)
+                                Button {
+                                    selectedWorldType = type
+                                } label: {
+                                    HStack(spacing: 5) {
+                                        Image(systemName: type.iconName)
+                                            .font(.system(size: 11, weight: .bold))
+                                        Text(type.displayName.uppercased())
+                                            .font(.system(size: 9.5, weight: .black, design: .monospaced))
                                     }
+                                    .padding(.horizontal, 9)
                                     .padding(.vertical, 6)
-                                    .padding(.horizontal, 8)
-                                    .background(Color.purple.opacity(0.06))
-                                    .cornerRadius(8)
+                                    .background(isSelected ? theme.primaryAccent : theme.buttonBackground)
+                                    .foregroundColor(isSelected ? .white : .white.opacity(0.75))
+                                    .cornerRadius(6)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 6)
+                                            .stroke(isSelected ? theme.primaryAccent : theme.cardBorder.opacity(0.5), lineWidth: 1)
+                                    )
                                 }
                                 .buttonStyle(.plain)
                             }
                         }
-
-                        Text("STANDARD WORLD TYPES")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .foregroundColor(.secondary)
-                            .padding(.top, 4)
-
-                        ForEach(WorldType.allCases) { type in
-                            Button {
-                                selectedWorldType = type
-                            } label: {
-                                HStack(spacing: 12) {
-                                    ZStack {
-                                        Circle()
-                                            .fill(selectedWorldType == type ? Color.green.opacity(0.2) : Color.gray.opacity(0.15))
-                                            .frame(width: 34, height: 34)
-                                        Image(systemName: type.iconName)
-                                            .font(.system(size: 15, weight: .bold))
-                                            .foregroundColor(selectedWorldType == type ? .green : .primary)
-                                    }
-
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        HStack {
-                                            Text(type.displayName)
-                                                .font(.system(size: 13, weight: .bold, design: .monospaced))
-                                                .foregroundColor(.primary)
-                                            Spacer()
-                                            if selectedWorldType == type {
-                                                Image(systemName: "checkmark.circle.fill")
-                                                    .foregroundColor(.green)
-                                                    .font(.system(size: 14))
-                                            }
-                                        }
-                                        Text(type.subtitle)
-                                            .font(.system(size: 10, design: .monospaced))
-                                            .foregroundColor(.secondary)
-                                            .lineLimit(2)
-                                    }
-                                }
-                                .padding(.vertical, 6)
-                                .padding(.horizontal, 8)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .fill(selectedWorldType == type ? Color.green.opacity(0.10) : Color.clear)
-                                )
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .stroke(selectedWorldType == type ? Color.green.opacity(0.4) : Color.clear, lineWidth: 1)
-                                )
-                            }
-                            .buttonStyle(.plain)
-                        }
-
-                        TextField("New world name (optional)...", text: $worldNameInput)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(size: 13, design: .monospaced))
-                            .padding(.top, 4)
-
-                        Button {
-                            world.regenerateNewWorld(type: selectedWorldType, customName: worldNameInput)
-                            dismiss()
-                        } label: {
-                            HStack {
-                                Spacer()
-                                Image(systemName: "sparkles")
-                                    .foregroundColor(.white)
-                                Text("Generate \(selectedWorldType.displayName) World")
-                                    .font(.system(size: 13, weight: .bold, design: .monospaced))
-                                    .foregroundColor(.white)
-                                Spacer()
-                            }
-                            .padding(.vertical, 10)
-                            .background(Color.green)
-                            .cornerRadius(8)
-                        }
-                        .padding(.top, 2)
-
-                        Text("Your current world is automatically saved before generating a new world.")
-                            .font(.system(size: 10, design: .monospaced))
-                            .foregroundColor(.secondary)
                     }
-                    .padding(.vertical, 4)
-                }
 
-                Section("Saved Worlds (\(world.savedWorlds.count))") {
-                    if world.savedWorlds.isEmpty {
-                        Text("Worlds are automatically saved as you build!")
-                            .font(.system(size: 12, design: .monospaced))
-                            .foregroundColor(.secondary)
-                            .padding(.vertical, 8)
-                    } else {
-                        ForEach(world.savedWorlds) { saved in
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    HStack(spacing: 6) {
-                                        Text(saved.name)
-                                            .font(.system(size: 14, weight: .bold, design: .monospaced))
-                                        if saved.id == world.currentWorldID {
-                                            Text("ACTIVE")
-                                                .font(.system(size: 9, weight: .black, design: .monospaced))
-                                                .padding(.horizontal, 5)
-                                                .padding(.vertical, 2)
-                                                .background(Color.green.opacity(0.25))
-                                                .foregroundColor(.green)
-                                                .cornerRadius(4)
-                                        }
-                                    }
-                                    Text("\(saved.archetypeName ?? "World") • Seed #\(saved.seed)")
-                                        .font(.system(size: 11, design: .monospaced))
-                                        .foregroundColor(.secondary)
-                                    Text(saved.savedAt.formatted(date: .abbreviated, time: .shortened))
-                                        .font(.system(size: 10, design: .monospaced))
-                                        .foregroundColor(.secondary)
-                                }
+                    Text(selectedWorldType.subtitle)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.70))
 
-                                Spacer()
-
-                                Button {
-                                    world.saveCurrentWorld(silent: true)
-                                    world.loadSavedWorld(saved)
-                                    dismiss()
-                                } label: {
-                                    Text("Load")
-                                        .font(.system(size: 12, weight: .bold, design: .monospaced))
-                                }
-                                .buttonStyle(.borderedProminent)
-                                .tint(.blue)
-
-                                Button(role: .destructive) {
-                                    world.deleteSavedWorld(saved)
-                                } label: {
-                                    Image(systemName: "trash")
-                                }
-                                .buttonStyle(.bordered)
-                            }
-                            .padding(.vertical, 4)
-                        }
-                    }
-                }
-            }
-            .navigationTitle("BlockBuild Worlds")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") {
+                    GameButton(
+                        title: "Generate \(selectedWorldType.displayName) World",
+                        subtitle: "Creates a fresh procedural seed",
+                        icon: "sparkles",
+                        color: theme.primaryAccent,
+                        isProminent: true
+                    ) {
+                        world.regenerateNewWorld(type: selectedWorldType, customName: worldNameInput)
                         dismiss()
                     }
                 }
             }
-            .onAppear {
-                worldNameInput = ""
+
+            // 5. Saved Worlds List
+            GameCard(
+                title: "SAVED WORLDS (\(world.savedWorlds.count))",
+                icon: "folder.fill",
+                badge: "\(world.savedWorlds.count) SAVED"
+            ) {
+                VStack(spacing: 8) {
+                    if world.savedWorlds.isEmpty {
+                        Text("No saved worlds yet. Worlds auto-save automatically as you build!")
+                            .font(.system(size: 10.5, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.60))
+                            .padding(8)
+                    } else {
+                        ForEach(world.savedWorlds) { saved in
+                            let isActive = (saved.id == world.currentWorldID)
+
+                            HStack {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    HStack(spacing: 6) {
+                                        Text(saved.name)
+                                            .font(.system(size: 13, weight: .bold, design: .monospaced))
+                                            .foregroundColor(.white)
+
+                                        if isActive {
+                                            Text("ACTIVE")
+                                                .font(.system(size: 8.5, weight: .black, design: .monospaced))
+                                                .padding(.horizontal, 5)
+                                                .padding(.vertical, 1.5)
+                                                .background(theme.primaryAccent.opacity(0.25))
+                                                .foregroundColor(theme.primaryAccent)
+                                                .cornerRadius(4)
+                                        }
+                                    }
+
+                                    Text("\(saved.archetypeName ?? "World") • Seed #\(saved.seed) • \(saved.savedAt.formatted(date: .abbreviated, time: .shortened))")
+                                        .font(.system(size: 9.5, design: .monospaced))
+                                        .foregroundColor(.white.opacity(0.65))
+                                }
+
+                                Spacer()
+
+                                GameSmallButton(title: "Load", icon: "arrow.down.circle.fill", color: theme.secondaryAccent, isProminent: true) {
+                                    world.saveCurrentWorld(silent: true)
+                                    world.loadSavedWorld(saved)
+                                    dismiss()
+                                }
+
+                                Button {
+                                    world.deleteSavedWorld(saved)
+                                } label: {
+                                    Image(systemName: "trash")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.red.opacity(0.8))
+                                        .padding(6)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .padding(9)
+                            .background(theme.buttonBackground.opacity(0.55))
+                            .cornerRadius(8)
+                        }
+                    }
+                }
             }
         }
+        .onAppear {
+            worldNameInput = ""
+        }
+    }
+
+    private func inspirationChip(_ title: String, prompt: String) -> some View {
+        Button {
+            aiPrompt = prompt
+            synthesizeAndPlayAIWorld()
+        } label: {
+            Text(title.uppercased())
+                .font(.system(size: 9, weight: .black, design: .monospaced))
+                .foregroundColor(.white.opacity(0.85))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(Color.white.opacity(0.08))
+                .cornerRadius(6)
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.2), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func traitTag(icon: String, text: String) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: icon)
+                .font(.system(size: 8))
+            Text(text)
+                .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+        }
+        .foregroundColor(.white.opacity(0.75))
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(Color.white.opacity(0.08))
+        .cornerRadius(4)
+    }
+
+    private func synthesizeAndPlayAIWorld() {
+        guard !aiPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        isSynthesizingAI = true
+        let generated = LightweightGameAI.shared.synthesizeWorld(prompt: aiPrompt)
+        generatedCustomWorld = generated
+        world.saveCustomWorldType(generated)
+        world.regenerateWithCustomWorld(generated)
+        isSynthesizingAI = false
+        dismiss()
     }
 }
 
@@ -1307,26 +1413,41 @@ struct MainMenuView: View {
     @Binding var showingSkinsSheet: Bool
     @Binding var showingMultiplayerSheet: Bool
     @Binding var showingSettingsSheet: Bool
-    @Binding var showingAIStudioSheet: Bool
+    @Binding var showingSkinMakerSheet: Bool
+
+    @ObservedObject private var themeMgr = MenuThemeManager.shared
 
     var body: some View {
+        let theme = themeMgr.currentTheme
+
         GeometryReader { geo in
             ZStack {
                 // Panoramic 3D Voxel World Scene in background
                 VoxelSceneView(world: world)
                     .ignoresSafeArea()
-                    .overlay(Color.black.opacity(0.48))
+
+                // Theme-responsive atmospheric tint overlay
+                LinearGradient(
+                    colors: [
+                        theme.backgroundGradient[0].opacity(0.60),
+                        theme.backgroundGradient[1].opacity(0.40),
+                        Color.black.opacity(0.55)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea()
 
                 let isLandscape = geo.size.width >= 540
                 let isCompactHeight = geo.size.height < 420
 
                 ViewThatFits(in: .vertical) {
                     // 1. Primary layout (fits cleanly on all iPhones & iPads without scrolling)
-                    menuLayout(geo: geo, isLandscape: isLandscape, isCompactHeight: isCompactHeight)
+                    menuLayout(geo: geo, isLandscape: isLandscape, isCompactHeight: isCompactHeight, theme: theme)
 
                     // 2. Fallback scrollable layout if extreme accessibility Dynamic Type or micro-window
                     ScrollView(.vertical, showsIndicators: false) {
-                        menuLayout(geo: geo, isLandscape: isLandscape, isCompactHeight: isCompactHeight)
+                        menuLayout(geo: geo, isLandscape: isLandscape, isCompactHeight: isCompactHeight, theme: theme)
                             .frame(minHeight: geo.size.height)
                     }
                 }
@@ -1335,44 +1456,57 @@ struct MainMenuView: View {
     }
 
     @ViewBuilder
-    private func menuLayout(geo: GeometryProxy, isLandscape: Bool, isCompactHeight: Bool) -> some View {
+    private func menuLayout(geo: GeometryProxy, isLandscape: Bool, isCompactHeight: Bool, theme: MenuTheme) -> some View {
         if isLandscape {
-            landscapeLayout(geo: geo, isCompactHeight: isCompactHeight)
+            landscapeLayout(geo: geo, isCompactHeight: isCompactHeight, theme: theme)
         } else {
-            portraitLayout(geo: geo, isCompactHeight: isCompactHeight)
+            portraitLayout(geo: geo, isCompactHeight: isCompactHeight, theme: theme)
         }
     }
 
-    private func landscapeLayout(geo: GeometryProxy, isCompactHeight: Bool) -> some View {
+    private func landscapeLayout(geo: GeometryProxy, isCompactHeight: Bool, theme: MenuTheme) -> some View {
         HStack(alignment: .center, spacing: max(20, geo.size.width * 0.05)) {
             // Left Column: Logo Title, Equipped Skin Pill, Feature Tags
             VStack(alignment: .leading, spacing: isCompactHeight ? 10 : 14) {
                 Spacer()
 
-                // Retro Title Banner
+                // Retro Themed Title Banner
                 VStack(alignment: .leading, spacing: 3) {
                     Text("BLOCKBUILD")
                         .font(.system(size: isCompactHeight ? 32 : 38, weight: .black, design: .monospaced))
-                        .foregroundColor(.green)
+                        .foregroundStyle(theme.headerGradient)
                         .shadow(color: .black, radius: 4, x: 2, y: 3)
                         .minimumScaleFactor(0.75)
                         .lineLimit(1)
 
-                    Text("A RETRO VOXEL SANDBOX")
-                        .font(.system(size: isCompactHeight ? 9.5 : 11, weight: .black, design: .monospaced))
-                        .foregroundColor(.yellow)
-                        .tracking(2.5)
-                        .shadow(color: .black, radius: 2)
-                        .lineLimit(1)
+                    HStack(spacing: 6) {
+                        Text("A RETRO VOXEL SANDBOX")
+                            .font(.system(size: isCompactHeight ? 9.5 : 11, weight: .black, design: .monospaced))
+                            .foregroundColor(theme.secondaryAccent)
+                            .tracking(2.5)
+                            .shadow(color: .black, radius: 2)
+                            .lineLimit(1)
+
+                        Text("•")
+                            .foregroundColor(.white.opacity(0.4))
+
+                        Text(theme.displayName.uppercased())
+                            .font(.system(size: isCompactHeight ? 8.5 : 9.5, weight: .black, design: .monospaced))
+                            .foregroundColor(theme.primaryAccent)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 1.5)
+                            .background(theme.primaryAccent.opacity(0.18))
+                            .cornerRadius(4)
+                    }
                 }
 
                 // Equipped Skin Preview Pill
-                skinPreviewPill(compact: isCompactHeight)
+                skinPreviewPill(compact: isCompactHeight, theme: theme)
 
                 // Feature Highlights
                 VStack(alignment: .leading, spacing: 5) {
-                    featureBadge(icon: "cube.fill", text: "Infinite Voxel Worlds", color: .green)
-                    featureBadge(icon: "sparkles", text: "AI World & Skin Studio", color: .purple)
+                    featureBadge(icon: "cube.fill", text: "Infinite Voxel Worlds", color: theme.primaryAccent)
+                    featureBadge(icon: "paintpalette.fill", text: "Skin & Texture Pixel Studio", color: theme.secondaryAccent)
                     featureBadge(icon: "person.2.fill", text: "Nearby Co-Op & World Sync", color: .pink)
                 }
                 .padding(.top, 4)
@@ -1387,22 +1521,22 @@ struct MainMenuView: View {
 
                 MainMenuButton(
                     title: "PLAY WORLDS",
-                    subtitle: "Create, Load & Explore Worlds",
+                    subtitle: "Create, Load & AI Biomes",
                     icon: "globe.americas.fill",
-                    color: .green,
+                    color: theme.primaryAccent,
                     compact: isCompactHeight
                 ) {
                     showingWorldsSheet = true
                 }
 
                 MainMenuButton(
-                    title: "AI STUDIO",
-                    subtitle: "Create Worlds & Skins with AI",
-                    icon: "sparkles",
-                    color: .purple,
+                    title: "SKIN & TEXTURE MAKER",
+                    subtitle: "Modify PNG & Inspect 3D Model",
+                    icon: "paintpalette.fill",
+                    color: theme.secondaryAccent,
                     compact: isCompactHeight
                 ) {
-                    showingAIStudioSheet = true
+                    showingSkinMakerSheet = true
                 }
 
                 MainMenuButton(
@@ -1417,9 +1551,9 @@ struct MainMenuView: View {
 
                 MainMenuButton(
                     title: "SETTINGS",
-                    subtitle: "Textures, Sensitivity & Controls",
+                    subtitle: "Themes (\(theme.displayName)), Textures & Options",
                     icon: "gearshape.fill",
-                    color: .indigo,
+                    color: Color(red: 0.35, green: 0.38, blue: 0.48),
                     compact: isCompactHeight
                 ) {
                     showingSettingsSheet = true
@@ -1436,41 +1570,41 @@ struct MainMenuView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func portraitLayout(geo: GeometryProxy, isCompactHeight: Bool) -> some View {
+    private func portraitLayout(geo: GeometryProxy, isCompactHeight: Bool, theme: MenuTheme) -> some View {
         VStack(spacing: 12) {
             Spacer()
 
-            // Retro Title Banner
+            // Retro Themed Title Banner
             VStack(spacing: 4) {
                 Text("BLOCKBUILD")
                     .font(.system(size: 34, weight: .black, design: .monospaced))
-                    .foregroundColor(.green)
+                    .foregroundStyle(theme.headerGradient)
                     .shadow(color: .black, radius: 4, x: 2, y: 3)
                     .minimumScaleFactor(0.7)
                     .lineLimit(1)
 
                 Text("A RETRO VOXEL SANDBOX")
                     .font(.system(size: 10.5, weight: .black, design: .monospaced))
-                    .foregroundColor(.yellow)
+                    .foregroundColor(theme.secondaryAccent)
                     .tracking(2.5)
                     .shadow(color: .black, radius: 2)
             }
 
-            skinPreviewPill(compact: false)
+            skinPreviewPill(compact: false, theme: theme)
 
             Spacer()
 
             VStack(spacing: 9) {
-                MainMenuButton(title: "PLAY WORLDS", subtitle: "Create, Load & Explore Worlds", icon: "globe.americas.fill", color: .green) {
+                MainMenuButton(title: "PLAY WORLDS", subtitle: "Create, Load & AI Biomes", icon: "globe.americas.fill", color: theme.primaryAccent) {
                     showingWorldsSheet = true
                 }
-                MainMenuButton(title: "AI STUDIO", subtitle: "Create Worlds & Skins with AI", icon: "sparkles", color: .purple) {
-                    showingAIStudioSheet = true
+                MainMenuButton(title: "SKIN & TEXTURE MAKER", subtitle: "Modify PNG & Inspect 3D Model", icon: "paintpalette.fill", color: theme.secondaryAccent) {
+                    showingSkinMakerSheet = true
                 }
                 MainMenuButton(title: "MULTIPLAYER", subtitle: world.connectedPlayerNames.isEmpty ? "Local Wi-Fi Co-Op" : "\(world.connectedPlayerNames.count) Connected", icon: "person.2.wave.2.fill", color: .pink) {
                     showingMultiplayerSheet = true
                 }
-                MainMenuButton(title: "SETTINGS", subtitle: "Textures, Sensitivity & Controls", icon: "gearshape.fill", color: .indigo) {
+                MainMenuButton(title: "SETTINGS", subtitle: "Themes (\(theme.displayName)), Textures & Options", icon: "gearshape.fill", color: Color(red: 0.35, green: 0.38, blue: 0.48)) {
                     showingSettingsSheet = true
                 }
             }
@@ -1482,7 +1616,7 @@ struct MainMenuView: View {
             HStack(spacing: 8) {
                 Text("Infinite Worlds")
                 Text("•")
-                Text("AI Studio")
+                Text("Skin Maker")
                 Text("•")
                 Text("Local Co-Op")
             }
@@ -1496,7 +1630,7 @@ struct MainMenuView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func skinPreviewPill(compact: Bool) -> some View {
+    private func skinPreviewPill(compact: Bool, theme: MenuTheme) -> some View {
         Button {
             showingSkinsSheet = true
         } label: {
@@ -1513,7 +1647,7 @@ struct MainMenuView: View {
                         .lineLimit(1)
                     Text("Tap to change skin")
                         .font(.system(size: 8.5, weight: .medium, design: .monospaced))
-                        .foregroundColor(.cyan)
+                        .foregroundColor(theme.primaryAccent)
                 }
                 Image(systemName: "chevron.right")
                     .font(.system(size: 9, weight: .bold))
@@ -1521,11 +1655,12 @@ struct MainMenuView: View {
             }
             .padding(.horizontal, compact ? 10 : 12)
             .padding(.vertical, compact ? 5 : 6)
-            .background(Color.black.opacity(0.65))
+            .background(theme.cardBackground)
             .cornerRadius(18)
             .overlay(
-                Capsule().stroke(Color.white.opacity(0.3), lineWidth: 1)
+                Capsule().stroke(theme.cardBorder, lineWidth: 1.2)
             )
+            .shadow(color: .black.opacity(0.35), radius: 3, y: 1.5)
         }
     }
 
@@ -1550,13 +1685,21 @@ struct MainMenuButton: View {
     var compact: Bool = false
     let action: () -> Void
 
+    @ObservedObject private var themeMgr = MenuThemeManager.shared
+
     var body: some View {
+        let theme = themeMgr.currentTheme
+
         Button(action: action) {
             HStack(spacing: compact ? 10 : 12) {
-                Image(systemName: icon)
-                    .font(.system(size: compact ? 15 : 17, weight: .bold))
-                    .foregroundColor(.white)
-                    .frame(width: compact ? 24 : 28)
+                ZStack {
+                    RoundedRectangle(cornerRadius: 7)
+                        .fill(color.opacity(0.28))
+                        .frame(width: compact ? 26 : 30, height: compact ? 26 : 30)
+                    Image(systemName: icon)
+                        .font(.system(size: compact ? 14 : 16, weight: .bold))
+                        .foregroundColor(.white)
+                }
 
                 VStack(alignment: .leading, spacing: 1.5) {
                     Text(title)
@@ -1582,7 +1725,7 @@ struct MainMenuButton: View {
             .padding(.vertical, compact ? 7.5 : 9.5)
             .background(
                 LinearGradient(
-                    colors: [color.opacity(0.88), color.opacity(0.70)],
+                    colors: [color.opacity(0.90), theme.buttonBackground.opacity(0.85)],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
@@ -1590,7 +1733,7 @@ struct MainMenuButton: View {
             .cornerRadius(11)
             .overlay(
                 RoundedRectangle(cornerRadius: 11)
-                    .stroke(Color.white.opacity(0.35), lineWidth: 1.5)
+                    .stroke(theme.cardBorder, lineWidth: 1.5)
             )
             .shadow(color: .black.opacity(0.4), radius: 3, y: 1.5)
         }
@@ -1637,212 +1780,122 @@ struct CharacterAvatarPreview: View {
 
 struct CharacterSkinsSheet: View {
     @ObservedObject var world: VoxelWorld
-    @Binding var showingAIStudioSheet: Bool
+    @Binding var showingSkinMakerSheet: Bool
     @Environment(\.dismiss) private var dismiss
+
+    @ObservedObject private var themeMgr = MenuThemeManager.shared
 
     let columns = [
         GridItem(.adaptive(minimum: 155), spacing: 12)
     ]
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 16) {
-                    // Header card
-                    HStack(spacing: 14) {
-                        if let custom = world.activeCustomSkin {
-                            CharacterAvatarPreview(customSkin: custom, size: 52)
-                                .padding(8)
-                                .background(Color.white.opacity(0.1))
-                                .cornerRadius(10)
-                        } else {
-                            CharacterAvatarPreview(skin: world.selectedSkin, size: 52)
-                                .padding(8)
-                                .background(Color.white.opacity(0.1))
-                                .cornerRadius(10)
-                        }
+        let theme = themeMgr.currentTheme
 
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Current Skin: \(world.activeCustomSkin?.name ?? world.selectedSkin.displayName)")
-                                .font(.system(size: 15, weight: .black, design: .monospaced))
-                                .foregroundColor(.white)
-                            Text(world.activeCustomSkin?.roleSubtitle ?? world.selectedSkin.roleSubtitle)
-                                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                .foregroundColor(.yellow)
-                            Text("Other players see this skin in local multiplayer!")
-                                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                                .foregroundColor(.white.opacity(0.75))
-                        }
-                        Spacer()
-                    }
-                    .padding(14)
-                    .background(Color.black.opacity(0.6))
-                    .cornerRadius(12)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.white.opacity(0.25), lineWidth: 1)
-                    )
-
-                    // AI Skin Generator Button (Direct NavigationLink directly to Skin Generator)
-                    NavigationLink {
-                        AIStudioSheet(world: world, initialTab: .skins)
-                    } label: {
-                        HStack {
-                            ZStack {
-                                Circle()
-                                    .fill(LinearGradient(colors: [.cyan, .indigo], startPoint: .topLeading, endPoint: .bottomTrailing))
-                                    .frame(width: 34, height: 34)
-                                Image(systemName: "sparkles")
-                                    .foregroundColor(.white)
-                                    .font(.system(size: 15, weight: .bold))
-                            }
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("✨ AI Skin Generator")
-                                    .font(.system(size: 13, weight: .bold, design: .monospaced))
-                                    .foregroundColor(.cyan)
-                                Text("Describe and synthesize custom 64x64 skins")
-                                    .font(.system(size: 10, design: .monospaced))
-                                    .foregroundColor(.white.opacity(0.75))
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .foregroundColor(.white.opacity(0.6))
-                        }
-                        .padding(12)
-                        .background(Color.cyan.opacity(0.12))
-                        .cornerRadius(12)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color.cyan.opacity(0.4), lineWidth: 1)
-                        )
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-
-                    // Saved AI Skins Grid
-                    if !world.customSkins.isEmpty {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("SAVED AI CHARACTER SKINS (\(world.customSkins.count))")
-                                .font(.system(size: 11, weight: .black, design: .monospaced))
-                                .foregroundColor(.cyan)
-
-                            LazyVGrid(columns: columns, spacing: 12) {
-                                ForEach(world.customSkins) { skin in
-                                    let isEquipped = (world.activeCustomSkin?.id == skin.id)
-                                    Button {
-                                        UISelectionFeedbackGenerator().selectionChanged()
-                                        world.equipCustomSkin(skin)
-                                    } label: {
-                                        VStack(spacing: 8) {
-                                            CharacterAvatarPreview(customSkin: skin, size: 46)
-                                                .frame(height: 64)
-
-                                            VStack(spacing: 2) {
-                                                Text(skin.name)
-                                                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                                    .foregroundColor(.white)
-                                                    .lineLimit(1)
-                                                Text(skin.roleSubtitle)
-                                                    .font(.system(size: 9, design: .monospaced))
-                                                    .foregroundColor(.cyan)
-                                                    .lineLimit(1)
-                                            }
-
-                                            if isEquipped {
-                                                HStack(spacing: 4) {
-                                                    Image(systemName: "checkmark.circle.fill")
-                                                    Text("EQUIPPED")
-                                                }
-                                                .font(.system(size: 9, weight: .black, design: .monospaced))
-                                                .foregroundColor(.green)
-                                                .padding(.horizontal, 8)
-                                                .padding(.vertical, 4)
-                                                .background(Color.green.opacity(0.2))
-                                                .cornerRadius(6)
-                                            } else {
-                                                Text("TAP TO EQUIP")
-                                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                                    .foregroundColor(.white.opacity(0.6))
-                                                    .padding(.horizontal, 8)
-                                                    .padding(.vertical, 4)
-                                                    .background(Color.white.opacity(0.1))
-                                                    .cornerRadius(6)
-                                            }
-                                        }
-                                        .padding(10)
-                                        .frame(maxWidth: .infinity)
-                                        .background(isEquipped ? Color.green.opacity(0.12) : Color.black.opacity(0.5))
-                                        .cornerRadius(10)
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 10)
-                                                .stroke(isEquipped ? Color.green.opacity(0.6) : Color.white.opacity(0.2), lineWidth: 1)
-                                        )
-                                        .contentShape(Rectangle())
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
-                        }
+        GameMenuContainer(
+            title: "CHARACTER SKINS",
+            subtitle: "Select, Equip & Paint Custom Skins",
+            icon: "person.fill",
+            onDismiss: { dismiss() }
+        ) {
+            // Header card: Currently Equipped
+            GameCard(title: "CURRENTLY EQUIPPED", icon: "checkmark.seal.fill") {
+                HStack(spacing: 14) {
+                    if let custom = world.activeCustomSkin {
+                        CharacterAvatarPreview(customSkin: custom, size: 48)
+                            .padding(6)
+                            .background(theme.buttonBackground)
+                            .cornerRadius(10)
+                    } else {
+                        CharacterAvatarPreview(skin: world.selectedSkin, size: 48)
+                            .padding(6)
+                            .background(theme.buttonBackground)
+                            .cornerRadius(10)
                     }
 
-                    // Built-in Skins Header
-                    HStack {
-                        Text("STANDARD CHARACTERS")
-                            .font(.system(size: 11, weight: .black, design: .monospaced))
-                            .foregroundColor(.white.opacity(0.6))
-                        Spacer()
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(world.activeCustomSkin?.name.uppercased() ?? world.selectedSkin.displayName.uppercased())
+                            .font(.system(size: 14, weight: .black, design: .monospaced))
+                            .foregroundColor(.white)
+                        Text(world.activeCustomSkin?.roleSubtitle ?? world.selectedSkin.roleSubtitle)
+                            .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                            .foregroundColor(theme.secondaryAccent)
+                        Text("Visible in singleplayer & local Wi-Fi multiplayer")
+                            .font(.system(size: 9.5, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.65))
                     }
-                    .padding(.top, 4)
+                    Spacer()
+                }
+            }
 
-                    // Skins Grid
-                    LazyVGrid(columns: columns, spacing: 12) {
-                        ForEach(PlayerSkin.allCases) { skin in
-                            let isEquipped = (world.activeCustomSkin == nil && world.selectedSkin == skin)
+            // Skin & Texture Maker Jump Button
+            GameButton(
+                title: "Skin & Texture Maker",
+                subtitle: "Modify PNG pixels on canvas and inspect live 3D model",
+                icon: "paintpalette.fill",
+                color: theme.secondaryAccent,
+                isProminent: true
+            ) {
+                dismiss()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                    showingSkinMakerSheet = true
+                }
+            }
+
+            // Saved Custom Skins Grid
+            if !world.customSkins.isEmpty {
+                GameCard(
+                    title: "SAVED CUSTOM SKINS (\(world.customSkins.count))",
+                    icon: "person.crop.artframe",
+                    badge: "PLAYER CREATED"
+                ) {
+                    LazyVGrid(columns: columns, spacing: 10) {
+                        ForEach(world.customSkins) { skin in
+                            let isEquipped = (world.activeCustomSkin?.id == skin.id)
                             Button {
                                 UISelectionFeedbackGenerator().selectionChanged()
-                                world.setSkin(skin)
+                                world.equipCustomSkin(skin)
                             } label: {
-                                VStack(spacing: 10) {
-                                    CharacterAvatarPreview(skin: skin, size: 46)
-                                        .frame(height: 64)
+                                VStack(spacing: 8) {
+                                    CharacterAvatarPreview(customSkin: skin, size: 44)
+                                        .frame(height: 60)
 
                                     VStack(spacing: 2) {
-                                        Text(skin.displayName)
-                                            .font(.system(size: 12, weight: .bold, design: .monospaced))
+                                        Text(skin.name)
+                                            .font(.system(size: 11, weight: .bold, design: .monospaced))
                                             .foregroundColor(.white)
+                                            .lineLimit(1)
                                         Text(skin.roleSubtitle)
-                                            .font(.system(size: 9, weight: .semibold, design: .monospaced))
-                                            .foregroundColor(.cyan)
+                                            .font(.system(size: 9, design: .monospaced))
+                                            .foregroundColor(theme.secondaryAccent)
+                                            .lineLimit(1)
                                     }
 
                                     if isEquipped {
-                                        HStack(spacing: 4) {
-                                            Image(systemName: "checkmark.circle.fill")
-                                            Text("EQUIPPED")
-                                        }
-                                        .font(.system(size: 9, weight: .black, design: .monospaced))
-                                        .foregroundColor(.green)
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 4)
-                                        .background(Color.green.opacity(0.2))
-                                        .cornerRadius(6)
+                                        Text("EQUIPPED")
+                                            .font(.system(size: 8.5, weight: .black, design: .monospaced))
+                                            .foregroundColor(theme.primaryAccent)
+                                            .padding(.horizontal, 7)
+                                            .padding(.vertical, 3)
+                                            .background(theme.primaryAccent.opacity(0.20))
+                                            .cornerRadius(5)
                                     } else {
-                                        Text("TAP TO EQUIP")
-                                            .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                            .foregroundColor(.white.opacity(0.6))
-                                            .padding(.horizontal, 8)
-                                            .padding(.vertical, 4)
-                                            .background(Color.white.opacity(0.1))
-                                            .cornerRadius(6)
+                                        Text("EQUIP")
+                                            .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                                            .foregroundColor(.white.opacity(0.7))
+                                            .padding(.horizontal, 7)
+                                            .padding(.vertical, 3)
+                                            .background(theme.buttonBackground)
+                                            .cornerRadius(5)
                                     }
                                 }
-                                .padding(12)
+                                .padding(10)
                                 .frame(maxWidth: .infinity)
-                                .background(isEquipped ? Color.green.opacity(0.18) : Color.black.opacity(0.45))
-                                .cornerRadius(12)
+                                .background(isEquipped ? theme.primaryAccent.opacity(0.18) : theme.buttonBackground.opacity(0.6))
+                                .cornerRadius(10)
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .stroke(isEquipped ? Color.green : Color.white.opacity(0.25), lineWidth: isEquipped ? 2 : 1)
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .stroke(isEquipped ? theme.primaryAccent : theme.cardBorder.opacity(0.5), lineWidth: 1)
                                 )
                                 .contentShape(Rectangle())
                             }
@@ -1850,17 +1903,61 @@ struct CharacterSkinsSheet: View {
                         }
                     }
                 }
-                .padding(16)
             }
-            .background(Color(red: 0.12, green: 0.13, blue: 0.16).ignoresSafeArea())
-            .navigationTitle("Character Skins")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") {
-                        dismiss()
+
+            // Standard Characters Grid
+            GameCard(title: "STANDARD CHARACTERS", icon: "person.3.fill") {
+                LazyVGrid(columns: columns, spacing: 10) {
+                    ForEach(PlayerSkin.allCases) { skin in
+                        let isEquipped = (world.activeCustomSkin == nil && world.selectedSkin == skin)
+                        Button {
+                            UISelectionFeedbackGenerator().selectionChanged()
+                            world.setSkin(skin)
+                        } label: {
+                            VStack(spacing: 8) {
+                                CharacterAvatarPreview(skin: skin, size: 44)
+                                    .frame(height: 60)
+
+                                VStack(spacing: 2) {
+                                    Text(skin.displayName)
+                                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                        .foregroundColor(.white)
+                                    Text(skin.roleSubtitle)
+                                        .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
+                                        .foregroundColor(theme.secondaryAccent)
+                                        .lineLimit(1)
+                                }
+
+                                if isEquipped {
+                                    Text("EQUIPPED")
+                                        .font(.system(size: 8.5, weight: .black, design: .monospaced))
+                                        .foregroundColor(theme.primaryAccent)
+                                        .padding(.horizontal, 7)
+                                        .padding(.vertical, 3)
+                                        .background(theme.primaryAccent.opacity(0.20))
+                                        .cornerRadius(5)
+                                } else {
+                                    Text("EQUIP")
+                                        .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                                        .foregroundColor(.white.opacity(0.7))
+                                        .padding(.horizontal, 7)
+                                        .padding(.vertical, 3)
+                                        .background(theme.buttonBackground)
+                                        .cornerRadius(5)
+                                }
+                            }
+                            .padding(10)
+                            .frame(maxWidth: .infinity)
+                            .background(isEquipped ? theme.primaryAccent.opacity(0.18) : theme.buttonBackground.opacity(0.6))
+                            .cornerRadius(10)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10)
+                                        .stroke(isEquipped ? theme.primaryAccent : theme.cardBorder.opacity(0.5), lineWidth: 1)
+                            )
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .font(.system(size: 13, weight: .bold, design: .monospaced))
                 }
             }
         }
@@ -1871,142 +1968,92 @@ struct CharacterSkinsSheet: View {
 
 struct TexturePacksSheet: View {
     @ObservedObject var world: VoxelWorld
+    var showingSkinMakerSheet: Binding<Bool>? = nil
     @Environment(\.dismiss) private var dismiss
+
+    @ObservedObject private var themeMgr = MenuThemeManager.shared
 
     private let sampleBlocks: [BlockType] = [.grass, .stone, .woodPlanks, .door, .glass, .water]
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 16) {
-                    // Header card
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Image(systemName: "paintpalette.fill")
-                                .foregroundColor(.cyan)
-                                .font(.system(size: 16, weight: .bold))
-                            Text("TEXTURE PACKS")
-                                .font(.system(size: 13, weight: .black, design: .monospaced))
-                                .foregroundColor(.white)
-                            Spacer()
-                            Text("\(TexturePack.allCases.count) PACKS")
-                                .font(.system(size: 10, weight: .heavy, design: .monospaced))
-                                .foregroundColor(.yellow)
-                        }
-                        Text("Transform all blocks in your world in real-time. Choose a custom theme below to instantly re-style all 15 voxel block types.")
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundColor(.white.opacity(0.8))
-                    }
-                    .padding(14)
-                    .background(Color.black.opacity(0.65))
-                    .cornerRadius(12)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.white.opacity(0.25), lineWidth: 1)
-                    )
+        let theme = themeMgr.currentTheme
 
-                    // Texture Packs List
-                    VStack(spacing: 12) {
-                        ForEach(TexturePack.allCases) { pack in
-                            let isSelected = (world.currentTexturePack == pack)
+        GameMenuContainer(
+            title: "TEXTURE PACKS",
+            subtitle: "Select Pack • Style All 15 Block Types",
+            icon: "cube.fill",
+            onDismiss: { dismiss() }
+        ) {
+            // Header card
+            GameCard(title: "BLOCK TEXTURE STYLES", icon: "paintpalette.fill", badge: "\(TexturePack.allCases.count) PACKS") {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Transform every voxel in your world in real-time with pixel-crafted block textures.")
+                        .font(.system(size: 10.5, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.80))
 
-                            Button {
-                                UISelectionFeedbackGenerator().selectionChanged()
-                                world.setTexturePack(pack)
-                            } label: {
-                                VStack(alignment: .leading, spacing: 10) {
-                                    HStack(spacing: 12) {
-                                        ZStack {
-                                            Circle()
-                                                .fill(pack.themeColor.opacity(isSelected ? 0.35 : 0.18))
-                                                .frame(width: 36, height: 36)
-                                            Image(systemName: pack.iconName)
-                                                .font(.system(size: 16, weight: .bold))
-                                                .foregroundColor(pack.themeColor)
-                                        }
-
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            HStack(spacing: 6) {
-                                                Text(pack.displayName)
-                                                    .font(.system(size: 14, weight: .bold, design: .monospaced))
-                                                    .foregroundColor(.white)
-
-                                                if isSelected {
-                                                    Text("ACTIVE")
-                                                        .font(.system(size: 9, weight: .black, design: .monospaced))
-                                                        .foregroundColor(.black)
-                                                        .padding(.horizontal, 6)
-                                                        .padding(.vertical, 2)
-                                                        .background(Color.green)
-                                                        .cornerRadius(4)
-                                                }
-                                            }
-
-                                            Text(pack.subtitle)
-                                                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                                                .foregroundColor(.white.opacity(0.72))
-                                                .lineLimit(2)
-                                        }
-
-                                        Spacer()
-
-                                        if isSelected {
-                                            Image(systemName: "checkmark.circle.fill")
-                                                .foregroundColor(.green)
-                                                .font(.system(size: 20))
-                                        }
-                                    }
-
-                                    // Live Block Preview Strip
-                                    HStack(spacing: 8) {
-                                        ForEach(sampleBlocks) { block in
-                                            VStack(spacing: 3) {
-                                                Image(uiImage: block.iconImage(for: pack))
-                                                    .interpolation(.none)
-                                                    .resizable()
-                                                    .scaledToFit()
-                                                    .frame(width: 32, height: 32)
-                                                    .background(Color.black.opacity(0.5))
-                                                    .cornerRadius(6)
-                                                    .overlay(
-                                                        RoundedRectangle(cornerRadius: 6)
-                                                            .stroke(Color.white.opacity(0.2), lineWidth: 1)
-                                                    )
-
-                                                Text(block.displayName)
-                                                    .font(.system(size: 8, weight: .bold, design: .monospaced))
-                                                    .foregroundColor(.white.opacity(0.75))
-                                                    .lineLimit(1)
-                                            }
-                                        }
-                                    }
-                                    .padding(.top, 2)
-                                }
-                                .padding(12)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .fill(isSelected ? pack.themeColor.opacity(0.16) : Color.black.opacity(0.55))
-                                )
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .stroke(isSelected ? pack.themeColor : Color.white.opacity(0.18), lineWidth: isSelected ? 2 : 1)
-                                )
+                    if let showingSkinMaker = showingSkinMakerSheet {
+                        GameButton(
+                            title: "Open Texture Maker",
+                            subtitle: "Draw custom 16x16 pixel block textures",
+                            icon: "paintpalette.fill",
+                            color: theme.secondaryAccent
+                        ) {
+                            dismiss()
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                                showingSkinMaker.wrappedValue = true
                             }
-                            .buttonStyle(.plain)
                         }
+                        .padding(.top, 4)
                     }
                 }
-                .padding(16)
             }
-            .background(Color(red: 0.12, green: 0.13, blue: 0.16).ignoresSafeArea())
-            .navigationTitle("Texture Packs")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") {
-                        dismiss()
+
+            // Texture Packs Cards
+            ForEach(TexturePack.allCases) { pack in
+                let isSelected = (world.currentTexturePack == pack)
+
+                GameCard(
+                    title: pack.displayName,
+                    icon: pack.iconName,
+                    badge: isSelected ? "ACTIVE" : nil
+                ) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(pack.subtitle)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.70))
+
+                        // Live Block Preview Strip
+                        HStack(spacing: 8) {
+                            ForEach(sampleBlocks) { block in
+                                VStack(spacing: 3) {
+                                    Image(uiImage: block.iconImage(for: pack))
+                                        .interpolation(.none)
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(width: 32, height: 32)
+                                        .background(theme.buttonBackground)
+                                        .cornerRadius(6)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 6)
+                                                .stroke(theme.cardBorder.opacity(0.5), lineWidth: 1)
+                                        )
+
+                                    Text(block.displayName)
+                                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                                        .foregroundColor(.white.opacity(0.75))
+                                        .lineLimit(1)
+                                }
+                            }
+                        }
+
+                        if !isSelected {
+                            GameSmallButton(title: "Apply Pack", icon: "checkmark", color: pack.themeColor, isProminent: true) {
+                                UISelectionFeedbackGenerator().selectionChanged()
+                                world.setTexturePack(pack)
+                            }
+                            .padding(.top, 2)
+                        }
                     }
-                    .font(.system(size: 13, weight: .bold, design: .monospaced))
                 }
             }
         }
@@ -2018,147 +2065,33 @@ struct InGameSettingsSheet: View {
     @Binding var showingSkinsSheet: Bool
     @Binding var showingWorldsSheet: Bool
     @Binding var showingTexturePacksSheet: Bool
-    @Binding var showingAIStudioSheet: Bool
+    @Binding var showingSkinMakerSheet: Bool
     @Environment(\.dismiss) private var dismiss
     @State private var showRefillToast: Bool = false
 
-    var body: some View {
-        NavigationStack {
-            List {
-                if world.isInGame {
-                    Section {
-                        Button {
-                            dismiss()
-                        } label: {
-                            HStack {
-                                Image(systemName: "play.fill")
-                                    .foregroundColor(.green)
-                                    .frame(width: 24)
-                                Text("Resume Game")
-                                    .font(.system(size: 14, weight: .bold, design: .monospaced))
-                                    .foregroundColor(.white)
-                                Spacer()
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
+    @ObservedObject private var themeMgr = MenuThemeManager.shared
 
-                        Button {
+    var body: some View {
+        let theme = themeMgr.currentTheme
+
+        GameMenuContainer(
+            title: "SETTINGS & OPTIONS",
+            subtitle: "Themes, Graphics, Controls & Sound",
+            icon: "gearshape.fill",
+            onDismiss: { dismiss() }
+        ) {
+            // 1. In-game Session Card
+            if world.isInGame {
+                GameCard(title: "GAME SESSION", icon: "gamecontroller.fill", badge: "IN WORLD") {
+                    VStack(spacing: 8) {
+                        GameButton(title: "Resume Game", subtitle: "Return to your voxel world", icon: "play.fill", color: .green, isProminent: true) {
+                            dismiss()
+                        }
+
+                        GameButton(title: "Save & Leave to Menu", subtitle: "Auto-saves world and exits to main menu", icon: "house.fill", color: .red, isDestructive: true) {
                             dismiss()
                             world.leaveToMainMenu()
-                        } label: {
-                            HStack {
-                                Image(systemName: "house.fill")
-                                    .foregroundColor(.red)
-                                    .frame(width: 24)
-                                Text("Save & Leave to Menu")
-                                    .font(.system(size: 14, weight: .bold, design: .monospaced))
-                                    .foregroundColor(.red)
-                                Spacer()
-                            }
-                            .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
-                    } header: {
-                        Text("Game Session")
-                    }
-                }
-
-                Section {
-                    NavigationLink {
-                        CharacterSkinsSheet(world: world, showingAIStudioSheet: $showingAIStudioSheet)
-                    } label: {
-                        HStack(spacing: 12) {
-                            if let custom = world.activeCustomSkin {
-                                CharacterAvatarPreview(customSkin: custom, size: 26)
-                            } else {
-                                CharacterAvatarPreview(skin: world.selectedSkin, size: 26)
-                            }
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Change Character Skin")
-                                    .font(.system(size: 13, weight: .bold, design: .monospaced))
-                                    .foregroundColor(.white)
-                                Text("Current: \(world.activeCustomSkin?.name ?? world.selectedSkin.displayName)")
-                                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                                    .foregroundColor(.cyan)
-                            }
-                            Spacer()
-                        }
-                        .contentShape(Rectangle())
-                    }
-
-                    NavigationLink {
-                        TexturePacksSheet(world: world)
-                    } label: {
-                        HStack(spacing: 12) {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(world.currentTexturePack.themeColor.opacity(0.25))
-                                    .frame(width: 26, height: 26)
-                                Image(systemName: world.currentTexturePack.iconName)
-                                    .foregroundColor(world.currentTexturePack.themeColor)
-                                    .font(.system(size: 13, weight: .bold))
-                            }
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Texture Packs")
-                                    .font(.system(size: 13, weight: .bold, design: .monospaced))
-                                    .foregroundColor(.white)
-                                Text("Current: \(world.currentTexturePack.displayName)")
-                                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                                    .foregroundColor(.cyan)
-                            }
-                            Spacer()
-                        }
-                        .contentShape(Rectangle())
-                    }
-
-                    NavigationLink {
-                        AIStudioSheet(world: world, initialTab: .worlds)
-                    } label: {
-                        HStack(spacing: 12) {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(Color.purple.opacity(0.25))
-                                    .frame(width: 26, height: 26)
-                                Image(systemName: "sparkles")
-                                    .foregroundColor(.purple)
-                                    .font(.system(size: 13, weight: .bold))
-                            }
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("AI Studio (Worlds & Skins)")
-                                    .font(.system(size: 13, weight: .bold, design: .monospaced))
-                                    .foregroundColor(.white)
-                                Text("Generate custom worlds & character skins")
-                                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                                    .foregroundColor(.cyan)
-                            }
-                            Spacer()
-                        }
-                        .contentShape(Rectangle())
-                    }
-
-                    if world.isInGame {
-                        Button {
-                            dismiss()
-                            withAnimation {
-                                world.isEditingControls = true
-                            }
-                        } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: "slider.horizontal.3")
-                                    .foregroundColor(.yellow)
-                                    .frame(width: 26)
-                                Text("Customize HUD Controls")
-                                    .font(.system(size: 13, weight: .bold, design: .monospaced))
-                                    .foregroundColor(.white)
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .foregroundColor(.gray)
-                                    .font(.system(size: 12))
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
 
                         Button {
                             world.creativeRefill()
@@ -2173,268 +2106,201 @@ struct InGameSettingsSheet: View {
                             }
                         } label: {
                             HStack(spacing: 12) {
-                                Image(systemName: showRefillToast ? "checkmark.circle.fill" : "plus.square.fill")
-                                    .foregroundColor(showRefillToast ? .cyan : .green)
-                                    .frame(width: 26)
-                                Text(showRefillToast ? "Refilled! (+20 All Blocks)" : "Creative Refill (+20 All Blocks)")
-                                    .font(.system(size: 13, weight: .bold, design: .monospaced))
-                                    .foregroundColor(showRefillToast ? .cyan : .white)
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 7)
+                                        .fill(Color.cyan.opacity(0.25))
+                                        .frame(width: 32, height: 32)
+                                    Image(systemName: showRefillToast ? "checkmark.circle.fill" : "plus.square.fill")
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundColor(showRefillToast ? .cyan : .green)
+                                }
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(showRefillToast ? "REFILLED! (+20 ALL BLOCKS)" : "CREATIVE REFILL (+20 ALL BLOCKS)")
+                                        .font(.system(size: 12.5, weight: .black, design: .monospaced))
+                                        .foregroundColor(showRefillToast ? .cyan : .white)
+                                    Text("Refills hotbar and inventory with all building materials")
+                                        .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                                        .foregroundColor(.white.opacity(0.70))
+                                }
+
                                 Spacer()
                             }
-                            .contentShape(Rectangle())
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 10)
+                            .background(theme.buttonBackground)
+                            .cornerRadius(10)
+                            .overlay(RoundedRectangle(cornerRadius: 10).stroke(theme.cardBorder.opacity(0.7), lineWidth: 1.2))
                         }
                         .buttonStyle(.plain)
                     }
-                } header: {
-                    Text("Appearance & Customization")
                 }
+            }
 
-                Section("Display & Performance") {
-                    Toggle(isOn: $world.isPerformanceStabilizationEnabled) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            HStack {
-                                Image(systemName: "gauge.with.dots.needle.bottom.50percent")
-                                    .foregroundColor(.cyan)
-                                Text("Performance Stabilization")
-                                    .font(.system(size: 13, weight: .bold, design: .monospaced))
-                            }
-                            Text("Locks FPS to 60, sets render distance to 2 chunks, and optimizes chunk streaming for smooth, lag-free gameplay.")
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundColor(.secondary)
+            // 2. Menu Themes Card (Applies to all menus even main menu!)
+            GameCard(
+                title: "🎨 MENU THEMES (ALL MENUS)",
+                icon: "paintpalette.fill",
+                badge: theme.displayName.uppercased()
+            ) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Select a theme to customize all menus, including Main Menu, Worlds Menu, Multiplayer, Settings & Skin Maker.")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.75))
+
+                    MenuThemePickerView()
+                }
+            }
+
+            // 3. Creative & Customization Card
+            GameCard(title: "CREATIVE & ASSETS", icon: "square.grid.2x2.fill") {
+                VStack(spacing: 8) {
+                    GameButton(
+                        title: "Skin & Texture Maker",
+                        subtitle: "Modify PNG pixels on canvas & inspect 3D model",
+                        icon: "paintpalette.fill",
+                        color: theme.secondaryAccent
+                    ) {
+                        dismiss()
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                            showingSkinMakerSheet = true
                         }
                     }
 
-                    Picker(selection: Binding(
-                        get: { world.fpsLimit },
-                        set: { world.setFPSLimit($0) }
-                    )) {
-                        Text("Unlimited").tag(0)
-                        Text("30 FPS").tag(30)
-                        Text("40 FPS").tag(40)
-                        Text("60 FPS (Default & Smooth)").tag(60)
-                    } label: {
-                        HStack {
-                            Image(systemName: "speedometer")
-                                .foregroundColor(.orange)
-                            Text("FPS Limit")
-                                .font(.system(size: 13, weight: .bold, design: .monospaced))
+                    GameButton(
+                        title: "Change Character Skin",
+                        subtitle: "Equipped: \(world.activeCustomSkin?.name ?? world.selectedSkin.displayName)",
+                        icon: "person.crop.artframe",
+                        color: theme.primaryAccent
+                    ) {
+                        dismiss()
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                            showingSkinsSheet = true
                         }
                     }
 
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Image(systemName: "mountain.2.fill")
-                                .foregroundColor(.green)
-                            Text("Render Distance")
-                                .font(.system(size: 13, weight: .bold, design: .monospaced))
-                            Spacer()
-                            Text("\(world.renderDistance) Chunks (\(world.renderDistance * world.chunkSize)m)")
-                                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                .foregroundColor(.cyan)
+                    GameButton(
+                        title: "Texture Packs",
+                        subtitle: "Current: \(world.currentTexturePack.displayName)",
+                        icon: "cube.fill",
+                        color: world.currentTexturePack.themeColor
+                    ) {
+                        dismiss()
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                            showingTexturePacksSheet = true
                         }
+                    }
 
-                        HStack(spacing: 10) {
-                            Button {
-                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                world.setRenderDistance(world.renderDistance - 1)
-                            } label: {
-                                Image(systemName: "minus.circle.fill")
-                                    .font(.system(size: 22))
-                                    .foregroundColor(world.renderDistance > 2 ? .cyan : .gray.opacity(0.4))
+                    if world.isInGame {
+                        GameButton(
+                            title: "Customize HUD Controls",
+                            subtitle: "Drag joystick, buttons & hotbar anywhere",
+                            icon: "slider.horizontal.3",
+                            color: .yellow
+                        ) {
+                            dismiss()
+                            withAnimation {
+                                world.isEditingControls = true
                             }
-                            .buttonStyle(.plain)
-                            .disabled(world.renderDistance <= 2)
-
-                            Slider(
-                                value: Binding(
-                                    get: { Double(world.renderDistance) },
-                                    set: { world.setRenderDistance(Int($0)) }
-                                ),
-                                in: 2...8,
-                                step: 1
-                            )
-
-                            Button {
-                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                world.setRenderDistance(world.renderDistance + 1)
-                            } label: {
-                                Image(systemName: "plus.circle.fill")
-                                    .font(.system(size: 22))
-                                    .foregroundColor(world.renderDistance < 8 ? .cyan : .gray.opacity(0.4))
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(world.renderDistance >= 8)
-                        }
-
-                        HStack {
-                            Text("2 Chunks (Fast)")
-                                .font(.system(size: 9, design: .monospaced))
-                                .foregroundColor(.secondary)
-                            Spacer()
-                            Text("8 Chunks (Far)")
-                                .font(.system(size: 9, design: .monospaced))
-                                .foregroundColor(.secondary)
                         }
                     }
                 }
+            }
 
-                Section {
-                    Toggle(isOn: Binding(
-                        get: { world.isMultiplayerEnabled },
-                        set: { world.toggleMultiplayerEnabled($0) }
-                    )) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack {
-                                Image(systemName: "person.2.wave.2.fill")
-                                    .foregroundColor(.pink)
-                                Text("Multiplayer Mode")
-                                    .font(.system(size: 13, weight: .bold, design: .monospaced))
-                            }
-                            Text("Broadcasts signal when in a world so nearby players on Wi-Fi can join (Enabled by default)")
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                } header: {
-                    Text("Local Multiplayer")
+            // 4. Graphics & Display Card
+            GameCard(title: "GRAPHICS & DISPLAY", icon: "display") {
+                VStack(spacing: 10) {
+                    GameSliderRow(
+                        title: "Render Distance",
+                        icon: "mountain.2.fill",
+                        value: Binding(
+                            get: { Float(world.renderDistance) },
+                            set: { world.setRenderDistance(Int($0)) }
+                        ),
+                        range: 2...8,
+                        step: 1,
+                        formatString: "%.0f Chunks"
+                    )
+
+                    GameToggleRow(
+                        title: "Performance Stabilization",
+                        subtitle: "Caps FPS & optimizes streaming for smooth gameplay",
+                        icon: "gauge.with.dots.needle.bottom.50percent",
+                        isOn: $world.isPerformanceStabilizationEnabled
+                    )
                 }
+            }
 
-                Section {
-                    Toggle(isOn: $world.isMusicEnabled) {
-                        HStack {
-                            Image(systemName: world.isMusicEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill")
-                            Text("Background Music")
-                                .font(.system(size: 13, weight: .bold, design: .monospaced))
-                        }
-                    }
+            // 5. Controls & Sensitivity Card
+            GameCard(title: "CONTROLS & HUD", icon: "hand.tap.fill") {
+                VStack(spacing: 10) {
+                    GameSliderRow(
+                        title: "Look Sensitivity",
+                        icon: "cursorarrow.motionlines",
+                        value: Binding(
+                            get: { world.controlLayout.lookSensitivity },
+                            set: { world.controlLayout.lookSensitivity = $0 }
+                        ),
+                        range: 0.4...2.5,
+                        step: 0.1,
+                        formatString: "%.1fx"
+                    )
+
+                    GameSliderRow(
+                        title: "Movement Speed",
+                        icon: "figure.walk",
+                        value: Binding(
+                            get: { world.controlLayout.movementSpeedMultiplier / 0.2 },
+                            set: { world.controlLayout.movementSpeedMultiplier = $0 * 0.2 }
+                        ),
+                        range: 0.5...2.5,
+                        step: 0.1,
+                        formatString: "%.1fx"
+                    )
+
+                    GameSliderRow(
+                        title: "HUD Opacity",
+                        icon: "circle.lefthalf.filled",
+                        value: Binding(
+                            get: { Float(world.controlLayout.controlOpacity) },
+                            set: { world.controlLayout.controlOpacity = Double($0) }
+                        ),
+                        range: 0.3...1.0,
+                        step: 0.05,
+                        formatString: "%.0f"
+                    )
+
+                    GameToggleRow(
+                        title: "Swap Left / Right Controls",
+                        subtitle: "Mirror movement joystick and action buttons",
+                        icon: "arrow.left.and.right",
+                        isOn: $world.controlLayout.swapLeftRight
+                    )
+                }
+            }
+
+            // 6. Audio & Multiplayer Signals Card
+            GameCard(title: "AUDIO & SIGNALS", icon: "speaker.wave.2.fill") {
+                VStack(spacing: 8) {
+                    GameToggleRow(
+                        title: "Background Music",
+                        subtitle: "Alpha atmospheric retro soundtrack",
+                        icon: "music.note",
+                        isOn: $world.isMusicEnabled
+                    )
                     .onChange(of: world.isMusicEnabled) { enabled in
                         AlphaBackgroundMusic.shared.setEnabled(enabled)
                     }
 
-                    Toggle(isOn: $world.controlLayout.swapLeftRight) {
-                        Text("Swap Left / Right Controls")
-                            .font(.system(size: 13, weight: .bold, design: .monospaced))
-                    }
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text("Look Sensitivity")
-                                .font(.system(size: 12, weight: .bold, design: .monospaced))
-                            Spacer()
-                            Text(String(format: "%.1fx", world.controlLayout.lookSensitivity))
-                                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                .foregroundColor(.cyan)
-                        }
-                        HStack(spacing: 10) {
-                            Button {
-                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                world.controlLayout.lookSensitivity = max(0.4, (world.controlLayout.lookSensitivity * 10 - 1).rounded() / 10)
-                            } label: {
-                                Image(systemName: "minus.circle.fill")
-                                    .font(.system(size: 22))
-                                    .foregroundColor(world.controlLayout.lookSensitivity > 0.4 ? .cyan : .gray.opacity(0.4))
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(world.controlLayout.lookSensitivity <= 0.4)
-
-                            Slider(value: $world.controlLayout.lookSensitivity, in: 0.4...2.5, step: 0.1)
-
-                            Button {
-                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                world.controlLayout.lookSensitivity = min(2.5, (world.controlLayout.lookSensitivity * 10 + 1).rounded() / 10)
-                            } label: {
-                                Image(systemName: "plus.circle.fill")
-                                    .font(.system(size: 22))
-                                    .foregroundColor(world.controlLayout.lookSensitivity < 2.5 ? .cyan : .gray.opacity(0.4))
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(world.controlLayout.lookSensitivity >= 2.5)
-                        }
-                    }
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text("Movement Speed")
-                                .font(.system(size: 12, weight: .bold, design: .monospaced))
-                            Spacer()
-                            Text(String(format: "%.1fx", world.controlLayout.movementSpeedMultiplier / 0.2))
-                                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                .foregroundColor(.cyan)
-                        }
-                        HStack(spacing: 10) {
-                            Button {
-                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                world.controlLayout.movementSpeedMultiplier = max(0.1, world.controlLayout.movementSpeedMultiplier - 0.05)
-                            } label: {
-                                Image(systemName: "minus.circle.fill")
-                                    .font(.system(size: 22))
-                                    .foregroundColor(world.controlLayout.movementSpeedMultiplier > 0.1 ? .cyan : .gray.opacity(0.4))
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(world.controlLayout.movementSpeedMultiplier <= 0.1)
-
-                            Slider(value: $world.controlLayout.movementSpeedMultiplier, in: 0.1...2.0, step: 0.02)
-
-                            Button {
-                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                world.controlLayout.movementSpeedMultiplier = min(2.0, world.controlLayout.movementSpeedMultiplier + 0.05)
-                            } label: {
-                                Image(systemName: "plus.circle.fill")
-                                    .font(.system(size: 22))
-                                    .foregroundColor(world.controlLayout.movementSpeedMultiplier < 2.0 ? .cyan : .gray.opacity(0.4))
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(world.controlLayout.movementSpeedMultiplier >= 2.0)
-                        }
-                    }
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text("HUD Opacity")
-                                .font(.system(size: 12, weight: .bold, design: .monospaced))
-                            Spacer()
-                            Text("\(Int(world.controlLayout.controlOpacity * 100))%")
-                                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                .foregroundColor(.cyan)
-                        }
-                        HStack(spacing: 10) {
-                            Button {
-                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                world.controlLayout.controlOpacity = max(0.3, world.controlLayout.controlOpacity - 0.05)
-                            } label: {
-                                Image(systemName: "minus.circle.fill")
-                                    .font(.system(size: 22))
-                                    .foregroundColor(world.controlLayout.controlOpacity > 0.3 ? .cyan : .gray.opacity(0.4))
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(world.controlLayout.controlOpacity <= 0.3)
-
-                            Slider(value: $world.controlLayout.controlOpacity, in: 0.3...1.0, step: 0.05)
-
-                            Button {
-                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                world.controlLayout.controlOpacity = min(1.0, world.controlLayout.controlOpacity + 0.05)
-                            } label: {
-                                Image(systemName: "plus.circle.fill")
-                                    .font(.system(size: 22))
-                                    .foregroundColor(world.controlLayout.controlOpacity < 1.0 ? .cyan : .gray.opacity(0.4))
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(world.controlLayout.controlOpacity >= 1.0)
-                        }
-                    }
-                } header: {
-                    Text("Controls & Audio")
-                }
-            }
-            .navigationTitle("Settings")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") {
-                        dismiss()
-                    }
-                    .font(.system(size: 13, weight: .bold, design: .monospaced))
+                    GameToggleRow(
+                        title: "Local Multiplayer Signal",
+                        subtitle: "Automatically broadcast world on Wi-Fi",
+                        icon: "person.2.wave.2.fill",
+                        isOn: Binding(
+                            get: { world.isMultiplayerEnabled },
+                            set: { world.toggleMultiplayerEnabled($0) }
+                        )
+                    )
                 }
             }
         }

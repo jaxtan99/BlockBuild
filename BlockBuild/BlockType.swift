@@ -115,10 +115,41 @@ enum BlockType: Int, CaseIterable, Identifiable, Codable {
         materials(for: Self.activeTexturePack)
     }
 
+    // MARK: - Custom User-Created Block Textures
+    private static var customBlockTextures: [BlockType: UIImage] = [:]
+
+    static func setCustomTexture(for type: BlockType, image: UIImage) {
+        customBlockTextures[type] = image
+        materialCache.removeAll()
+    }
+
+    static func customTexture(for type: BlockType) -> UIImage? {
+        customBlockTextures[type]
+    }
+
+    static func clearCustomTexture(for type: BlockType) {
+        customBlockTextures.removeValue(forKey: type)
+        materialCache.removeAll()
+    }
+
+    static func baseTextureImage(for type: BlockType, pack: TexturePack = .classic) -> UIImage {
+        if let custom = customBlockTextures[type] {
+            return custom
+        }
+        return generateTexture(for: type, face: .side, pack: pack)
+    }
+
     func materials(for pack: TexturePack) -> [SCNMaterial] {
         let key = TextureCacheKey(block: self, pack: pack)
         if let cached = Self.materialCache[key] {
             return cached
+        }
+
+        if let customImage = Self.customBlockTextures[self] {
+            let mat = Self.makeMaterial(image: customImage, type: self)
+            let mats = [mat]
+            Self.materialCache[key] = mats
+            return mats
         }
         let mats: [SCNMaterial]
         if self == .woodLog {

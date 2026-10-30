@@ -13,7 +13,33 @@
 		A10000040000000000000001 /* VoxelWorld.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000040000000000000001 /* VoxelWorld.swift */; };
 		A10000070000000000000001 /* TexturePack.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000070000000000000001 /* TexturePack.swift */; };
 		A10000080000000000000001 /* AIGameStudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000080000000000000001 /* AIGameStudio.swift */; };
+		A10000090000000000000001 /* MenuTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000090000000000000001 /* MenuTheme.swift */; };
+		A100000A0000000000000001 /* SkinAndTextureMakerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000A0000000000000001 /* SkinAndTextureMakerView.swift */; };
 		A10000050000000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000050000000000000001 /* Assets.xcassets */; };
+		B100010000000000000001 /* AppIcon-ObsidianNeon.png in Resources */ = {isa = PBXBuildFile; fileRef = B200010000000000000001 /* AppIcon-ObsidianNeon.png */; };
+		B100020000000000000001 /* AppIcon-ObsidianNeon60x60@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = B200020000000000000001 /* AppIcon-ObsidianNeon60x60@2x.png */; };
+		B100030000000000000001 /* AppIcon-ObsidianNeon60x60@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = B200030000000000000001 /* AppIcon-ObsidianNeon60x60@3x.png */; };
+		B100040000000000000001 /* AppIcon-ObsidianNeon76x76@2x~ipad.png in Resources */ = {isa = PBXBuildFile; fileRef = B200040000000000000001 /* AppIcon-ObsidianNeon76x76@2x~ipad.png */; };
+		B100050000000000000001 /* AppIcon-NetherCrimson.png in Resources */ = {isa = PBXBuildFile; fileRef = B200050000000000000001 /* AppIcon-NetherCrimson.png */; };
+		B100060000000000000001 /* AppIcon-NetherCrimson60x60@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = B200060000000000000001 /* AppIcon-NetherCrimson60x60@2x.png */; };
+		B100070000000000000001 /* AppIcon-NetherCrimson60x60@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = B200070000000000000001 /* AppIcon-NetherCrimson60x60@3x.png */; };
+		B100080000000000000001 /* AppIcon-NetherCrimson76x76@2x~ipad.png in Resources */ = {isa = PBXBuildFile; fileRef = B200080000000000000001 /* AppIcon-NetherCrimson76x76@2x~ipad.png */; };
+		B100090000000000000001 /* AppIcon-DiamondFrost.png in Resources */ = {isa = PBXBuildFile; fileRef = B200090000000000000001 /* AppIcon-DiamondFrost.png */; };
+		B100100000000000000001 /* AppIcon-DiamondFrost60x60@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = B200100000000000000001 /* AppIcon-DiamondFrost60x60@2x.png */; };
+		B100110000000000000001 /* AppIcon-DiamondFrost60x60@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = B200110000000000000001 /* AppIcon-DiamondFrost60x60@3x.png */; };
+		B100120000000000000001 /* AppIcon-DiamondFrost76x76@2x~ipad.png in Resources */ = {isa = PBXBuildFile; fileRef = B200120000000000000001 /* AppIcon-DiamondFrost76x76@2x~ipad.png */; };
+		B100130000000000000001 /* AppIcon-GoldenSand.png in Resources */ = {isa = PBXBuildFile; fileRef = B200130000000000000001 /* AppIcon-GoldenSand.png */; };
+		B100140000000000000001 /* AppIcon-GoldenSand60x60@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = B200140000000000000001 /* AppIcon-GoldenSand60x60@2x.png */; };
+		B100150000000000000001 /* AppIcon-GoldenSand60x60@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = B200150000000000000001 /* AppIcon-GoldenSand60x60@3x.png */; };
+		B100160000000000000001 /* AppIcon-GoldenSand76x76@2x~ipad.png in Resources */ = {isa = PBXBuildFile; fileRef = B200160000000000000001 /* AppIcon-GoldenSand76x76@2x~ipad.png */; };
+		B100170000000000000001 /* AppIcon-EmeraldForest.png in Resources */ = {isa = PBXBuildFile; fileRef = B200170000000000000001 /* AppIcon-EmeraldForest.png */; };
+		B100180000000000000001 /* AppIcon-EmeraldForest60x60@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = B200180000000000000001 /* AppIcon-EmeraldForest60x60@2x.png */; };
+		B100190000000000000001 /* AppIcon-EmeraldForest60x60@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = B200190000000000000001 /* AppIcon-EmeraldForest60x60@3x.png */; };
+		B100200000000000000001 /* AppIcon-EmeraldForest76x76@2x~ipad.png in Resources */ = {isa = PBXBuildFile; fileRef = B200200000000000000001 /* AppIcon-EmeraldForest76x76@2x~ipad.png */; };
+		B100210000000000000001 /* AppIcon-CyberRedstone.png in Resources */ = {isa = PBXBuildFile; fileRef = B200210000000000000001 /* AppIcon-CyberRedstone.png */; };
+		B100220000000000000001 /* AppIcon-CyberRedstone60x60@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = B200220000000000000001 /* AppIcon-CyberRedstone60x60@2x.png */; };
+		B100230000000000000001 /* AppIcon-CyberRedstone60x60@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = B200230000000000000001 /* AppIcon-CyberRedstone60x60@3x.png */; };
+		B100240000000000000001 /* AppIcon-CyberRedstone76x76@2x~ipad.png in Resources */ = {isa = PBXBuildFile; fileRef = B200240000000000000001 /* AppIcon-CyberRedstone76x76@2x~ipad.png */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -24,8 +50,34 @@
 		A20000040000000000000001 /* VoxelWorld.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoxelWorld.swift; sourceTree = "<group>"; };
 		A20000070000000000000001 /* TexturePack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TexturePack.swift; sourceTree = "<group>"; };
 		A20000080000000000000001 /* AIGameStudio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIGameStudio.swift; sourceTree = "<group>"; };
+		A20000090000000000000001 /* MenuTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuTheme.swift; sourceTree = "<group>"; };
+		A200000A0000000000000001 /* SkinAndTextureMakerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkinAndTextureMakerView.swift; sourceTree = "<group>"; };
 		A20000050000000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A20000060000000000000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B200010000000000000001 /* AppIcon-ObsidianNeon.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-ObsidianNeon.png"; sourceTree = "<group>"; };
+		B200020000000000000001 /* AppIcon-ObsidianNeon60x60@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-ObsidianNeon60x60@2x.png"; sourceTree = "<group>"; };
+		B200030000000000000001 /* AppIcon-ObsidianNeon60x60@3x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-ObsidianNeon60x60@3x.png"; sourceTree = "<group>"; };
+		B200040000000000000001 /* AppIcon-ObsidianNeon76x76@2x~ipad.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-ObsidianNeon76x76@2x~ipad.png"; sourceTree = "<group>"; };
+		B200050000000000000001 /* AppIcon-NetherCrimson.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-NetherCrimson.png"; sourceTree = "<group>"; };
+		B200060000000000000001 /* AppIcon-NetherCrimson60x60@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-NetherCrimson60x60@2x.png"; sourceTree = "<group>"; };
+		B200070000000000000001 /* AppIcon-NetherCrimson60x60@3x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-NetherCrimson60x60@3x.png"; sourceTree = "<group>"; };
+		B200080000000000000001 /* AppIcon-NetherCrimson76x76@2x~ipad.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-NetherCrimson76x76@2x~ipad.png"; sourceTree = "<group>"; };
+		B200090000000000000001 /* AppIcon-DiamondFrost.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-DiamondFrost.png"; sourceTree = "<group>"; };
+		B200100000000000000001 /* AppIcon-DiamondFrost60x60@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-DiamondFrost60x60@2x.png"; sourceTree = "<group>"; };
+		B200110000000000000001 /* AppIcon-DiamondFrost60x60@3x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-DiamondFrost60x60@3x.png"; sourceTree = "<group>"; };
+		B200120000000000000001 /* AppIcon-DiamondFrost76x76@2x~ipad.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-DiamondFrost76x76@2x~ipad.png"; sourceTree = "<group>"; };
+		B200130000000000000001 /* AppIcon-GoldenSand.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-GoldenSand.png"; sourceTree = "<group>"; };
+		B200140000000000000001 /* AppIcon-GoldenSand60x60@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-GoldenSand60x60@2x.png"; sourceTree = "<group>"; };
+		B200150000000000000001 /* AppIcon-GoldenSand60x60@3x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-GoldenSand60x60@3x.png"; sourceTree = "<group>"; };
+		B200160000000000000001 /* AppIcon-GoldenSand76x76@2x~ipad.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-GoldenSand76x76@2x~ipad.png"; sourceTree = "<group>"; };
+		B200170000000000000001 /* AppIcon-EmeraldForest.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-EmeraldForest.png"; sourceTree = "<group>"; };
+		B200180000000000000001 /* AppIcon-EmeraldForest60x60@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-EmeraldForest60x60@2x.png"; sourceTree = "<group>"; };
+		B200190000000000000001 /* AppIcon-EmeraldForest60x60@3x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-EmeraldForest60x60@3x.png"; sourceTree = "<group>"; };
+		B200200000000000000001 /* AppIcon-EmeraldForest76x76@2x~ipad.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-EmeraldForest76x76@2x~ipad.png"; sourceTree = "<group>"; };
+		B200210000000000000001 /* AppIcon-CyberRedstone.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-CyberRedstone.png"; sourceTree = "<group>"; };
+		B200220000000000000001 /* AppIcon-CyberRedstone60x60@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-CyberRedstone60x60@2x.png"; sourceTree = "<group>"; };
+		B200230000000000000001 /* AppIcon-CyberRedstone60x60@3x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-CyberRedstone60x60@3x.png"; sourceTree = "<group>"; };
+		B200240000000000000001 /* AppIcon-CyberRedstone76x76@2x~ipad.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-CyberRedstone76x76@2x~ipad.png"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -56,8 +108,34 @@
 				A20000040000000000000001 /* VoxelWorld.swift */,
 				A20000070000000000000001 /* TexturePack.swift */,
 				A20000080000000000000001 /* AIGameStudio.swift */,
+				A20000090000000000000001 /* MenuTheme.swift */,
+				A200000A0000000000000001 /* SkinAndTextureMakerView.swift */,
 				A20000050000000000000001 /* Assets.xcassets */,
 				A20000060000000000000001 /* Info.plist */,
+				B200010000000000000001 /* AppIcon-ObsidianNeon.png */,
+				B200020000000000000001 /* AppIcon-ObsidianNeon60x60@2x.png */,
+				B200030000000000000001 /* AppIcon-ObsidianNeon60x60@3x.png */,
+				B200040000000000000001 /* AppIcon-ObsidianNeon76x76@2x~ipad.png */,
+				B200050000000000000001 /* AppIcon-NetherCrimson.png */,
+				B200060000000000000001 /* AppIcon-NetherCrimson60x60@2x.png */,
+				B200070000000000000001 /* AppIcon-NetherCrimson60x60@3x.png */,
+				B200080000000000000001 /* AppIcon-NetherCrimson76x76@2x~ipad.png */,
+				B200090000000000000001 /* AppIcon-DiamondFrost.png */,
+				B200100000000000000001 /* AppIcon-DiamondFrost60x60@2x.png */,
+				B200110000000000000001 /* AppIcon-DiamondFrost60x60@3x.png */,
+				B200120000000000000001 /* AppIcon-DiamondFrost76x76@2x~ipad.png */,
+				B200130000000000000001 /* AppIcon-GoldenSand.png */,
+				B200140000000000000001 /* AppIcon-GoldenSand60x60@2x.png */,
+				B200150000000000000001 /* AppIcon-GoldenSand60x60@3x.png */,
+				B200160000000000000001 /* AppIcon-GoldenSand76x76@2x~ipad.png */,
+				B200170000000000000001 /* AppIcon-EmeraldForest.png */,
+				B200180000000000000001 /* AppIcon-EmeraldForest60x60@2x.png */,
+				B200190000000000000001 /* AppIcon-EmeraldForest60x60@3x.png */,
+				B200200000000000000001 /* AppIcon-EmeraldForest76x76@2x~ipad.png */,
+				B200210000000000000001 /* AppIcon-CyberRedstone.png */,
+				B200220000000000000001 /* AppIcon-CyberRedstone60x60@2x.png */,
+				B200230000000000000001 /* AppIcon-CyberRedstone60x60@3x.png */,
+				B200240000000000000001 /* AppIcon-CyberRedstone76x76@2x~ipad.png */,
 			);
 			path = BlockBuild;
 			sourceTree = "<group>";
@@ -129,6 +207,30 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000050000000000000001 /* Assets.xcassets in Resources */,
+				B100010000000000000001 /* AppIcon-ObsidianNeon.png in Resources */,
+				B100020000000000000001 /* AppIcon-ObsidianNeon60x60@2x.png in Resources */,
+				B100030000000000000001 /* AppIcon-ObsidianNeon60x60@3x.png in Resources */,
+				B100040000000000000001 /* AppIcon-ObsidianNeon76x76@2x~ipad.png in Resources */,
+				B100050000000000000001 /* AppIcon-NetherCrimson.png in Resources */,
+				B100060000000000000001 /* AppIcon-NetherCrimson60x60@2x.png in Resources */,
+				B100070000000000000001 /* AppIcon-NetherCrimson60x60@3x.png in Resources */,
+				B100080000000000000001 /* AppIcon-NetherCrimson76x76@2x~ipad.png in Resources */,
+				B100090000000000000001 /* AppIcon-DiamondFrost.png in Resources */,
+				B100100000000000000001 /* AppIcon-DiamondFrost60x60@2x.png in Resources */,
+				B100110000000000000001 /* AppIcon-DiamondFrost60x60@3x.png in Resources */,
+				B100120000000000000001 /* AppIcon-DiamondFrost76x76@2x~ipad.png in Resources */,
+				B100130000000000000001 /* AppIcon-GoldenSand.png in Resources */,
+				B100140000000000000001 /* AppIcon-GoldenSand60x60@2x.png in Resources */,
+				B100150000000000000001 /* AppIcon-GoldenSand60x60@3x.png in Resources */,
+				B100160000000000000001 /* AppIcon-GoldenSand76x76@2x~ipad.png in Resources */,
+				B100170000000000000001 /* AppIcon-EmeraldForest.png in Resources */,
+				B100180000000000000001 /* AppIcon-EmeraldForest60x60@2x.png in Resources */,
+				B100190000000000000001 /* AppIcon-EmeraldForest60x60@3x.png in Resources */,
+				B100200000000000000001 /* AppIcon-EmeraldForest76x76@2x~ipad.png in Resources */,
+				B100210000000000000001 /* AppIcon-CyberRedstone.png in Resources */,
+				B100220000000000000001 /* AppIcon-CyberRedstone60x60@2x.png in Resources */,
+				B100230000000000000001 /* AppIcon-CyberRedstone60x60@3x.png in Resources */,
+				B100240000000000000001 /* AppIcon-CyberRedstone76x76@2x~ipad.png in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -145,6 +247,8 @@
 				A10000040000000000000001 /* VoxelWorld.swift in Sources */,
 				A10000070000000000000001 /* TexturePack.swift in Sources */,
 				A10000080000000000000001 /* AIGameStudio.swift in Sources */,
+				A10000090000000000000001 /* MenuTheme.swift in Sources */,
+				A100000A0000000000000001 /* SkinAndTextureMakerView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
