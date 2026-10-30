@@ -41,38 +41,182 @@ enum PixelDrawingTool: String, CaseIterable, Identifiable {
 
 // MARK: - Character Skin Editable Parts (Standard 64x64 Minecraft UV Map)
 
-enum SkinEditablePart: String, CaseIterable, Identifiable, CustomStringConvertible {
-    case headFront = "Head Front"
-    case headBack = "Head Back"
-    case headRight = "Head Right"
-    case headLeft = "Head Left"
-    case headTop = "Head Top"
-    case headBottom = "Head Bottom"
-    case torsoFront = "Torso Front"
-    case torsoBack = "Torso Back"
+enum SkinBodySection: String, CaseIterable, Identifiable {
+    case head = "Head"
+    case torso = "Torso"
     case rightArm = "Right Arm"
     case leftArm = "Left Arm"
     case rightLeg = "Right Leg"
     case leftLeg = "Left Leg"
 
     var id: String { rawValue }
+
+    var iconName: String {
+        switch self {
+        case .head: return "person.crop.circle"
+        case .torso: return "tshirt.fill"
+        case .rightArm, .leftArm: return "hand.raised.fill"
+        case .rightLeg, .leftLeg: return "figure.walk"
+        }
+    }
+
+    var parts: [SkinEditablePart] {
+        SkinEditablePart.allCases.filter { $0.section == self }
+    }
+}
+
+enum SkinEditablePart: String, CaseIterable, Identifiable, CustomStringConvertible {
+    // 1. Head (All 6 faces)
+    case headFront = "Head Front"
+    case headBack = "Head Back"
+    case headRight = "Head Right"
+    case headLeft = "Head Left"
+    case headTop = "Head Top"
+    case headBottom = "Head Bottom"
+
+    // 2. Torso (All 6 faces)
+    case torsoFront = "Torso Front"
+    case torsoBack = "Torso Back"
+    case torsoRight = "Torso Right"
+    case torsoLeft = "Torso Left"
+    case torsoTop = "Torso Top (Shoulders)"
+    case torsoBottom = "Torso Bottom (Waist)"
+
+    // 3. Right Arm (All 6 faces)
+    case rightArmFront = "R Arm Front"
+    case rightArmBack = "R Arm Back"
+    case rightArmOuter = "R Arm Outer"
+    case rightArmInner = "R Arm Inner"
+    case rightArmTop = "R Arm Shoulder"
+    case rightArmBottom = "R Arm Hand"
+
+    // 4. Left Arm (All 6 faces)
+    case leftArmFront = "L Arm Front"
+    case leftArmBack = "L Arm Back"
+    case leftArmOuter = "L Arm Outer"
+    case leftArmInner = "L Arm Inner"
+    case leftArmTop = "L Arm Shoulder"
+    case leftArmBottom = "L Arm Hand"
+
+    // 5. Right Leg (All 6 faces)
+    case rightLegFront = "R Leg Front"
+    case rightLegBack = "R Leg Back"
+    case rightLegOuter = "R Leg Outer"
+    case rightLegInner = "R Leg Inner"
+    case rightLegTop = "R Leg Top"
+    case rightLegBottom = "R Leg Foot"
+
+    // 6. Left Leg (All 6 faces)
+    case leftLegFront = "L Leg Front"
+    case leftLegBack = "L Leg Back"
+    case leftLegOuter = "L Leg Outer"
+    case leftLegInner = "L Leg Inner"
+    case leftLegTop = "L Leg Top"
+    case leftLegBottom = "L Leg Foot"
+
+    var id: String { rawValue }
     var description: String { rawValue }
 
-    // Coordinates in 64x64 skin PNG: (startX, startY, width, height)
+    var section: SkinBodySection {
+        if rawValue.starts(with: "Head") { return .head }
+        if rawValue.starts(with: "Torso") { return .torso }
+        if rawValue.starts(with: "R Arm") { return .rightArm }
+        if rawValue.starts(with: "L Arm") { return .leftArm }
+        if rawValue.starts(with: "R Leg") { return .rightLeg }
+        return .leftLeg
+    }
+
+    var shortFaceName: String {
+        switch self {
+        case .headFront, .torsoFront, .rightArmFront, .leftArmFront, .rightLegFront, .leftLegFront:
+            return "Front"
+        case .headBack, .torsoBack, .rightArmBack, .leftArmBack, .rightLegBack, .leftLegBack:
+            return "Back"
+        case .headRight:
+            return "Right"
+        case .headLeft:
+            return "Left"
+        case .headTop:
+            return "Top (Hair)"
+        case .headBottom:
+            return "Bottom (Neck)"
+        case .torsoRight:
+            return "Right Side"
+        case .torsoLeft:
+            return "Left Side"
+        case .torsoTop:
+            return "Shoulders"
+        case .torsoBottom:
+            return "Waist"
+        case .rightArmOuter, .leftArmOuter:
+            return "Outer Side"
+        case .rightArmInner, .leftArmInner:
+            return "Inner Side"
+        case .rightArmTop, .leftArmTop:
+            return "Shoulder"
+        case .rightArmBottom, .leftArmBottom:
+            return "Hand/Palm"
+        case .rightLegOuter, .leftLegOuter:
+            return "Outer Side"
+        case .rightLegInner, .leftLegInner:
+            return "Inner Side"
+        case .rightLegTop, .leftLegTop:
+            return "Top/Hip"
+        case .rightLegBottom, .leftLegBottom:
+            return "Foot/Sole"
+        }
+    }
+
+    // Coordinates in 64x64 standard Minecraft skin PNG: (startX, startY, width, height)
     var uvRect: (x: Int, y: Int, w: Int, h: Int) {
         switch self {
+        // Head (8x8x8 cube)
         case .headFront: return (8, 8, 8, 8)
         case .headBack: return (24, 8, 8, 8)
         case .headRight: return (0, 8, 8, 8)
         case .headLeft: return (16, 8, 8, 8)
         case .headTop: return (8, 0, 8, 8)
         case .headBottom: return (16, 0, 8, 8)
+
+        // Torso (8 wide x 12 high x 4 deep)
         case .torsoFront: return (20, 20, 8, 12)
+        case .torsoRight: return (16, 20, 4, 12)
         case .torsoBack: return (32, 20, 8, 12)
-        case .rightArm: return (44, 20, 4, 12)
-        case .leftArm: return (36, 52, 4, 12)
-        case .rightLeg: return (4, 20, 4, 12)
-        case .leftLeg: return (20, 52, 4, 12)
+        case .torsoLeft: return (28, 20, 4, 12)
+        case .torsoTop: return (20, 16, 8, 4)
+        case .torsoBottom: return (28, 16, 8, 4)
+
+        // Right Arm (4 wide x 12 high x 4 deep)
+        case .rightArmFront: return (44, 20, 4, 12)
+        case .rightArmOuter: return (40, 20, 4, 12)
+        case .rightArmBack: return (52, 20, 4, 12)
+        case .rightArmInner: return (48, 20, 4, 12)
+        case .rightArmTop: return (44, 16, 4, 4)
+        case .rightArmBottom: return (48, 16, 4, 4)
+
+        // Left Arm (4 wide x 12 high x 4 deep, 64x64 layout)
+        case .leftArmFront: return (36, 52, 4, 12)
+        case .leftArmOuter: return (32, 52, 4, 12)
+        case .leftArmBack: return (44, 52, 4, 12)
+        case .leftArmInner: return (40, 52, 4, 12)
+        case .leftArmTop: return (36, 48, 4, 4)
+        case .leftArmBottom: return (40, 48, 4, 4)
+
+        // Right Leg (4 wide x 12 high x 4 deep)
+        case .rightLegFront: return (4, 20, 4, 12)
+        case .rightLegOuter: return (0, 20, 4, 12)
+        case .rightLegBack: return (12, 20, 4, 12)
+        case .rightLegInner: return (8, 20, 4, 12)
+        case .rightLegTop: return (4, 16, 4, 4)
+        case .rightLegBottom: return (8, 16, 4, 4)
+
+        // Left Leg (4 wide x 12 high x 4 deep, 64x64 layout)
+        case .leftLegFront: return (20, 52, 4, 12)
+        case .leftLegOuter: return (16, 52, 4, 12)
+        case .leftLegBack: return (28, 52, 4, 12)
+        case .leftLegInner: return (24, 52, 4, 12)
+        case .leftLegTop: return (20, 48, 4, 4)
+        case .leftLegBottom: return (24, 48, 4, 4)
         }
     }
 }
@@ -131,6 +275,7 @@ struct SkinAndTextureMakerView: View {
 
     // --- Skin Maker State ---
     @State private var selectedSkinPreset: PlayerSkin = .steve
+    @State private var selectedBodySection: SkinBodySection = .head
     @State private var selectedPart: SkinEditablePart = .headFront
     @State private var skinPixels: [[UIColor]] = Array(repeating: Array(repeating: .clear, count: 64), count: 64)
     @State private var skinTool: PixelDrawingTool = .pencil
@@ -141,8 +286,9 @@ struct SkinAndTextureMakerView: View {
     @State private var show3DModelSheet: Bool = false
     @State private var statusToast: String? = nil
 
-    // Undo stack for skin (stores past 64x64 pixel states)
+    // Undo & Redo stacks for skin (stores past 64x64 pixel states)
     @State private var skinUndoStack: [[[UIColor]]] = []
+    @State private var skinRedoStack: [[[UIColor]]] = []
 
     // --- Texture Maker State ---
     @State private var selectedBlockType: BlockType = .woodLog
@@ -150,6 +296,7 @@ struct SkinAndTextureMakerView: View {
     @State private var blockPixels: [[UIColor]] = Array(repeating: Array(repeating: .gray, count: 16), count: 16)
     @State private var blockTool: PixelDrawingTool = .pencil
     @State private var blockUndoStack: [[[UIColor]]] = []
+    @State private var blockRedoStack: [[[UIColor]]] = []
     @State private var showBlock3DModelSheet: Bool = false
 
     var body: some View {
@@ -264,32 +411,76 @@ struct SkinAndTextureMakerView: View {
         }
 
         // Body Part Selector & Tools Card
-        GameCard(title: "SELECT BODY PART TO PAINT", icon: "figure.walk") {
+        GameCard(title: "SELECT BODY PART & SIDE TO PAINT", icon: "figure.walk") {
             VStack(spacing: 10) {
-                // Part chips
+                // 1. Body Section Selector (Head, Torso, Right Arm, Left Arm, Right Leg, Left Leg)
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
-                        ForEach(SkinEditablePart.allCases) { part in
-                            let isSelected = (selectedPart == part)
+                        ForEach(SkinBodySection.allCases) { section in
+                            let isSelected = (selectedBodySection == section)
                             Button {
-                                selectedPart = part
+                                selectedBodySection = section
+                                if !section.parts.contains(selectedPart) {
+                                    selectedPart = section.parts.first ?? .headFront
+                                }
                             } label: {
-                                Text(part.description.uppercased())
-                                    .font(.system(size: 9.5, weight: .black, design: .monospaced))
-                                    .padding(.horizontal, 9)
-                                    .padding(.vertical, 6)
-                                    .background(isSelected ? theme.secondaryAccent.opacity(0.85) : theme.buttonBackground)
-                                    .foregroundColor(isSelected ? .black : .white.opacity(0.8))
-                                    .cornerRadius(6)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 6)
-                                            .stroke(isSelected ? theme.secondaryAccent : theme.cardBorder.opacity(0.5), lineWidth: 1)
-                                    )
+                                HStack(spacing: 4) {
+                                    Image(systemName: section.iconName)
+                                        .font(.system(size: 11, weight: .bold))
+                                    Text(section.rawValue.uppercased())
+                                        .font(.system(size: 10, weight: .black, design: .monospaced))
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(isSelected ? theme.primaryAccent.opacity(0.9) : theme.buttonBackground)
+                                .foregroundColor(isSelected ? .white : .white.opacity(0.8))
+                                .cornerRadius(6)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .stroke(isSelected ? theme.primaryAccent : theme.cardBorder.opacity(0.5), lineWidth: 1)
+                                )
                             }
                             .buttonStyle(.plain)
                         }
                     }
                 }
+
+                // 2. Specific Face Selector for the Active Body Part (Front, Back, Left, Right, Top, Bottom)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "cube.transparent")
+                            .font(.system(size: 9.5, weight: .bold))
+                            .foregroundColor(theme.secondaryAccent)
+                        Text("\(selectedBodySection.rawValue.uppercased()) FACES (ALL 6 SIDES):")
+                            .font(.system(size: 9, weight: .black, design: .monospaced))
+                            .foregroundColor(theme.secondaryAccent)
+                    }
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(selectedBodySection.parts) { part in
+                                let isSelected = (selectedPart == part)
+                                Button {
+                                    selectedPart = part
+                                } label: {
+                                    Text(part.shortFaceName.uppercased())
+                                        .font(.system(size: 9.5, weight: .black, design: .monospaced))
+                                        .padding(.horizontal, 9)
+                                        .padding(.vertical, 5)
+                                        .background(isSelected ? theme.secondaryAccent.opacity(0.9) : theme.buttonBackground)
+                                        .foregroundColor(isSelected ? .black : .white.opacity(0.8))
+                                        .cornerRadius(6)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 6)
+                                                .stroke(isSelected ? theme.secondaryAccent : theme.cardBorder.opacity(0.5), lineWidth: 1)
+                                        )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+                .padding(.vertical, 2)
 
                 // Tool Buttons & Undo
                 HStack(spacing: 8) {
@@ -316,23 +507,44 @@ struct SkinAndTextureMakerView: View {
 
                     Spacer()
 
-                    Button {
-                        undoSkinStroke()
-                    } label: {
-                        HStack(spacing: 3) {
-                            Image(systemName: "arrow.uturn.backward")
-                            Text("UNDO")
-                                .font(.system(size: 9.5, weight: .black, design: .monospaced))
+                    // Undo & Redo buttons
+                    HStack(spacing: 6) {
+                        Button {
+                            undoSkinStroke()
+                        } label: {
+                            HStack(spacing: 3) {
+                                Image(systemName: "arrow.uturn.backward")
+                                Text("UNDO")
+                                    .font(.system(size: 9.5, weight: .black, design: .monospaced))
+                            }
+                            .foregroundColor(skinUndoStack.isEmpty ? .white.opacity(0.3) : .white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 6)
+                            .background(theme.buttonBackground)
+                            .cornerRadius(6)
+                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(theme.cardBorder.opacity(0.6), lineWidth: 1))
                         }
-                        .foregroundColor(skinUndoStack.isEmpty ? .white.opacity(0.3) : .white)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 6)
-                        .background(theme.buttonBackground)
-                        .cornerRadius(6)
-                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(theme.cardBorder.opacity(0.6), lineWidth: 1))
+                        .buttonStyle(.plain)
+                        .disabled(skinUndoStack.isEmpty)
+
+                        Button {
+                            redoSkinStroke()
+                        } label: {
+                            HStack(spacing: 3) {
+                                Image(systemName: "arrow.uturn.forward")
+                                Text("REDO")
+                                    .font(.system(size: 9.5, weight: .black, design: .monospaced))
+                            }
+                            .foregroundColor(skinRedoStack.isEmpty ? .white.opacity(0.3) : .white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 6)
+                            .background(theme.buttonBackground)
+                            .cornerRadius(6)
+                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(theme.cardBorder.opacity(0.6), lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(skinRedoStack.isEmpty)
                     }
-                    .buttonStyle(.plain)
-                    .disabled(skinUndoStack.isEmpty)
                 }
 
                 // Retro Color Palette Swatches
@@ -545,23 +757,44 @@ struct SkinAndTextureMakerView: View {
 
                     Spacer()
 
-                    Button {
-                        undoBlockStroke()
-                    } label: {
-                        HStack(spacing: 3) {
-                            Image(systemName: "arrow.uturn.backward")
-                            Text("UNDO")
-                                .font(.system(size: 9.5, weight: .black, design: .monospaced))
+                    // Undo & Redo buttons
+                    HStack(spacing: 6) {
+                        Button {
+                            undoBlockStroke()
+                        } label: {
+                            HStack(spacing: 3) {
+                                Image(systemName: "arrow.uturn.backward")
+                                Text("UNDO")
+                                    .font(.system(size: 9.5, weight: .black, design: .monospaced))
+                            }
+                            .foregroundColor(blockUndoStack.isEmpty ? .white.opacity(0.3) : .white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 6)
+                            .background(theme.buttonBackground)
+                            .cornerRadius(6)
+                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(theme.cardBorder.opacity(0.6), lineWidth: 1))
                         }
-                        .foregroundColor(blockUndoStack.isEmpty ? .white.opacity(0.3) : .white)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 6)
-                        .background(theme.buttonBackground)
-                        .cornerRadius(6)
-                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(theme.cardBorder.opacity(0.6), lineWidth: 1))
+                        .buttonStyle(.plain)
+                        .disabled(blockUndoStack.isEmpty)
+
+                        Button {
+                            redoBlockStroke()
+                        } label: {
+                            HStack(spacing: 3) {
+                                Image(systemName: "arrow.uturn.forward")
+                                Text("REDO")
+                                    .font(.system(size: 9.5, weight: .black, design: .monospaced))
+                            }
+                            .foregroundColor(blockRedoStack.isEmpty ? .white.opacity(0.3) : .white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 6)
+                            .background(theme.buttonBackground)
+                            .cornerRadius(6)
+                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(theme.cardBorder.opacity(0.6), lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(blockRedoStack.isEmpty)
                     }
-                    .buttonStyle(.plain)
-                    .disabled(blockUndoStack.isEmpty)
                 }
 
                 // Palette
@@ -736,11 +969,20 @@ struct SkinAndTextureMakerView: View {
             skinUndoStack.removeFirst()
         }
         skinUndoStack.append(skinPixels)
+        skinRedoStack.removeAll()
     }
 
     private func undoSkinStroke() {
         guard let prev = skinUndoStack.popLast() else { return }
+        skinRedoStack.append(skinPixels)
         skinPixels = prev
+        updatePreviewCustomSkin()
+    }
+
+    private func redoSkinStroke() {
+        guard let next = skinRedoStack.popLast() else { return }
+        skinUndoStack.append(skinPixels)
+        skinPixels = next
         updatePreviewCustomSkin()
     }
 
@@ -805,11 +1047,19 @@ struct SkinAndTextureMakerView: View {
             blockUndoStack.removeFirst()
         }
         blockUndoStack.append(blockPixels)
+        blockRedoStack.removeAll()
     }
 
     private func undoBlockStroke() {
         guard let prev = blockUndoStack.popLast() else { return }
+        blockRedoStack.append(blockPixels)
         blockPixels = prev
+    }
+
+    private func redoBlockStroke() {
+        guard let next = blockRedoStack.popLast() else { return }
+        blockUndoStack.append(blockPixels)
+        blockPixels = next
     }
 
     private func drawBlockPixel(x: Int, y: Int) {

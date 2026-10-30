@@ -238,19 +238,24 @@ struct GameMenuContainer<Content: View>: View {
                     Spacer()
 
                     if let onDismiss = onDismiss {
-                        Button(action: onDismiss) {
+                        Button(action: {
+                            let impact = UIImpactFeedbackGenerator(style: .medium)
+                            impact.impactOccurred()
+                            onDismiss()
+                        }) {
                             ZStack {
-                                Circle()
+                                RoundedRectangle(cornerRadius: 8)
                                     .fill(theme.cardBackground)
-                                    .overlay(Circle().stroke(theme.cardBorder, lineWidth: 1.5))
-                                    .frame(width: 32, height: 32)
+                                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(theme.cardBorder, lineWidth: 1.5))
+                                    .frame(width: 36, height: 36)
                                 Image(systemName: "xmark")
-                                    .font(.system(size: 13, weight: .black))
-                                    .foregroundColor(.white.opacity(0.85))
+                                    .font(.system(size: 15, weight: .black))
+                                    .foregroundColor(.white.opacity(0.95))
                             }
+                            .frame(width: 48, height: 48)
+                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .contentShape(Circle())
                     }
                 }
                 .padding(.horizontal, 18)
