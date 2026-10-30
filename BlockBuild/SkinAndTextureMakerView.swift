@@ -263,6 +263,20 @@ struct RetroPaletteColor: Identifiable {
     ]
 }
 
+// MARK: - Undo & Redo History Models
+
+struct SkinHistoryFrame {
+    let pixels: [[UIColor]]
+    let section: SkinBodySection
+    let part: SkinEditablePart
+}
+
+struct BlockHistoryFrame {
+    let pixels: [[UIColor]]
+    let blockType: BlockType
+    let face: BlockFace
+}
+
 // MARK: - Main Skin & Texture Maker View
 
 struct SkinAndTextureMakerView: View {
@@ -286,18 +300,19 @@ struct SkinAndTextureMakerView: View {
     @State private var show3DModelSheet: Bool = false
     @State private var statusToast: String? = nil
 
-    // Undo & Redo stacks for skin (stores past 64x64 pixel states)
-    @State private var skinUndoStack: [[[UIColor]]] = []
-    @State private var skinRedoStack: [[[UIColor]]] = []
+    // Undo & Redo stacks for skin (stores past 64x64 pixel states with body part)
+    @State private var skinUndoStack: [SkinHistoryFrame] = []
+    @State private var skinRedoStack: [SkinHistoryFrame] = []
 
     // --- Texture Maker State ---
     @State private var selectedBlockType: BlockType = .woodLog
     @State private var selectedBlockFace: BlockFace = .side
     @State private var blockPixels: [[UIColor]] = Array(repeating: Array(repeating: .gray, count: 16), count: 16)
     @State private var blockTool: PixelDrawingTool = .pencil
-    @State private var blockUndoStack: [[[UIColor]]] = []
-    @State private var blockRedoStack: [[[UIColor]]] = []
+    @State private var blockUndoStack: [BlockHistoryFrame] = []
+    @State private var blockRedoStack: [BlockHistoryFrame] = []
     @State private var showBlock3DModelSheet: Bool = false
+    @State private var hasLoadedInitialContent: Bool = false
 
     var body: some View {
         let theme = themeMgr.currentTheme
@@ -339,8 +354,17 @@ struct SkinAndTextureMakerView: View {
             }
         }
         .onAppear {
-            loadSkinFromPreset(selectedSkinPreset)
-            loadBlockTexture(selectedBlockType, face: selectedBlockFace)
+            if !hasLoadedInitialContent {
+                let skinImage = SkinTextureManager.shared.skinImage(for: selectedSkinPreset)
+                skinPixels = extractPixelsFromImage(skinImage, width: 64, height: 64)
+                activeSkinID = UUID()
+                updatePreviewCustomSkin()
+
+                let blockImage = BlockType.baseTextureImage(for: selectedBlockType, face: selectedBlockFace, pack: .classic)
+                blockPixels = extractPixelsFromImage(blockImage, width: 16, height: 16)
+
+                hasLoadedInitialContent = true
+            }
         }
         .sheet(isPresented: $show3DModelSheet) {
             full3DModelInspectorSheet(theme: theme)
@@ -482,71 +506,6 @@ struct SkinAndTextureMakerView: View {
                 }
                 .padding(.vertical, 2)
 
-                // Tool Buttons & Undo
-                HStack(spacing: 8) {
-                    ForEach(PixelDrawingTool.allCases) { tool in
-                        let isSelected = (skinTool == tool)
-                        Button {
-                            skinTool = tool
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: tool.iconName)
-                                    .font(.system(size: 11, weight: .bold))
-                                Text(tool.rawValue.uppercased())
-                                    .font(.system(size: 9.5, weight: .black, design: .monospaced))
-                            }
-                            .foregroundColor(isSelected ? .white : .white.opacity(0.75))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 6)
-                            .background(isSelected ? theme.primaryAccent : theme.buttonBackground)
-                            .cornerRadius(6)
-                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(theme.cardBorder.opacity(0.6), lineWidth: 1))
-                        }
-                        .buttonStyle(.plain)
-                    }
-
-                    Spacer()
-
-                    // Undo & Redo buttons
-                    HStack(spacing: 6) {
-                        Button {
-                            undoSkinStroke()
-                        } label: {
-                            HStack(spacing: 3) {
-                                Image(systemName: "arrow.uturn.backward")
-                                Text("UNDO")
-                                    .font(.system(size: 9.5, weight: .black, design: .monospaced))
-                            }
-                            .foregroundColor(skinUndoStack.isEmpty ? .white.opacity(0.3) : .white)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 6)
-                            .background(theme.buttonBackground)
-                            .cornerRadius(6)
-                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(theme.cardBorder.opacity(0.6), lineWidth: 1))
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(skinUndoStack.isEmpty)
-
-                        Button {
-                            redoSkinStroke()
-                        } label: {
-                            HStack(spacing: 3) {
-                                Image(systemName: "arrow.uturn.forward")
-                                Text("REDO")
-                                    .font(.system(size: 9.5, weight: .black, design: .monospaced))
-                            }
-                            .foregroundColor(skinRedoStack.isEmpty ? .white.opacity(0.3) : .white)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 6)
-                            .background(theme.buttonBackground)
-                            .cornerRadius(6)
-                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(theme.cardBorder.opacity(0.6), lineWidth: 1))
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(skinRedoStack.isEmpty)
-                    }
-                }
-
                 // Retro Color Palette Swatches
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
@@ -589,6 +548,80 @@ struct SkinAndTextureMakerView: View {
         // The Pixel Canvas & Live 3D Model Card
         GameCard(title: "PIXEL CANVAS (\(selectedPart.description.uppercased()))", icon: "square.grid.3x3.fill", badge: "DRAG TO DRAW") {
             VStack(spacing: 12) {
+                // Drawing Tools Row (Equal distribution, high hit target)
+                HStack(spacing: 6) {
+                    ForEach(PixelDrawingTool.allCases) { tool in
+                        let isSelected = (skinTool == tool)
+                        Button {
+                            skinTool = tool
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: tool.iconName)
+                                    .font(.system(size: 11, weight: .bold))
+                                Text(tool.rawValue.uppercased())
+                                    .font(.system(size: 9.5, weight: .black, design: .monospaced))
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 7)
+                            .background(isSelected ? theme.primaryAccent : theme.buttonBackground)
+                            .foregroundColor(isSelected ? .white : .white.opacity(0.8))
+                            .cornerRadius(6)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .stroke(isSelected ? Color.white.opacity(0.8) : theme.cardBorder.opacity(0.6), lineWidth: 1)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                // Dedicated UNDO & REDO Toolbar (Large touchable buttons that always register)
+                HStack(spacing: 8) {
+                    Button {
+                        undoSkinStroke()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.uturn.backward.circle.fill")
+                                .font(.system(size: 13, weight: .bold))
+                            Text(skinUndoStack.isEmpty ? "UNDO" : "UNDO (\(skinUndoStack.count))")
+                                .font(.system(size: 10.5, weight: .black, design: .monospaced))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 38)
+                        .background(skinUndoStack.isEmpty ? theme.buttonBackground.opacity(0.5) : theme.primaryAccent.opacity(0.3))
+                        .foregroundColor(skinUndoStack.isEmpty ? .white.opacity(0.35) : .white)
+                        .cornerRadius(6)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(skinUndoStack.isEmpty ? theme.cardBorder.opacity(0.3) : theme.primaryAccent.opacity(0.9), lineWidth: 1.2)
+                        )
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        redoSkinStroke()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.uturn.forward.circle.fill")
+                                .font(.system(size: 13, weight: .bold))
+                            Text(skinRedoStack.isEmpty ? "REDO" : "REDO (\(skinRedoStack.count))")
+                                .font(.system(size: 10.5, weight: .black, design: .monospaced))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 38)
+                        .background(skinRedoStack.isEmpty ? theme.buttonBackground.opacity(0.5) : theme.secondaryAccent.opacity(0.3))
+                        .foregroundColor(skinRedoStack.isEmpty ? .white.opacity(0.35) : .white)
+                        .cornerRadius(6)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(skinRedoStack.isEmpty ? theme.cardBorder.opacity(0.3) : theme.secondaryAccent.opacity(0.9), lineWidth: 1.2)
+                        )
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+
                 let rect = selectedPart.uvRect
 
                 // Interactive Pixel Grid Canvas
@@ -603,6 +636,11 @@ struct SkinAndTextureMakerView: View {
                     },
                     onPixelDraw: { (x, y) in
                         drawSkinPixel(partX: x, partY: y)
+                    },
+                    onStrokeStart: {
+                        if skinTool != .eyedropper {
+                            pushSkinUndo()
+                        }
                     }
                 )
                 .frame(maxWidth: .infinity)
@@ -732,71 +770,6 @@ struct SkinAndTextureMakerView: View {
                     .padding(.vertical, 2)
                 }
 
-                // Drawing tools for block texture
-                HStack(spacing: 8) {
-                    ForEach(PixelDrawingTool.allCases) { tool in
-                        let isSelected = (blockTool == tool)
-                        Button {
-                            blockTool = tool
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: tool.iconName)
-                                    .font(.system(size: 11, weight: .bold))
-                                Text(tool.rawValue.uppercased())
-                                    .font(.system(size: 9.5, weight: .black, design: .monospaced))
-                            }
-                            .foregroundColor(isSelected ? .white : .white.opacity(0.75))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 6)
-                            .background(isSelected ? theme.primaryAccent : theme.buttonBackground)
-                            .cornerRadius(6)
-                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(theme.cardBorder.opacity(0.6), lineWidth: 1))
-                        }
-                        .buttonStyle(.plain)
-                    }
-
-                    Spacer()
-
-                    // Undo & Redo buttons
-                    HStack(spacing: 6) {
-                        Button {
-                            undoBlockStroke()
-                        } label: {
-                            HStack(spacing: 3) {
-                                Image(systemName: "arrow.uturn.backward")
-                                Text("UNDO")
-                                    .font(.system(size: 9.5, weight: .black, design: .monospaced))
-                            }
-                            .foregroundColor(blockUndoStack.isEmpty ? .white.opacity(0.3) : .white)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 6)
-                            .background(theme.buttonBackground)
-                            .cornerRadius(6)
-                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(theme.cardBorder.opacity(0.6), lineWidth: 1))
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(blockUndoStack.isEmpty)
-
-                        Button {
-                            redoBlockStroke()
-                        } label: {
-                            HStack(spacing: 3) {
-                                Image(systemName: "arrow.uturn.forward")
-                                Text("REDO")
-                                    .font(.system(size: 9.5, weight: .black, design: .monospaced))
-                            }
-                            .foregroundColor(blockRedoStack.isEmpty ? .white.opacity(0.3) : .white)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 6)
-                            .background(theme.buttonBackground)
-                            .cornerRadius(6)
-                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(theme.cardBorder.opacity(0.6), lineWidth: 1))
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(blockRedoStack.isEmpty)
-                    }
-                }
-
                 // Palette
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 5) {
@@ -827,6 +800,80 @@ struct SkinAndTextureMakerView: View {
 
         GameCard(title: "16x16 BLOCK PIXEL CANVAS", icon: "square.grid.3x3.fill", badge: faceBadge) {
             VStack(spacing: 12) {
+                // Drawing Tools Row (Equal distribution, high hit target)
+                HStack(spacing: 6) {
+                    ForEach(PixelDrawingTool.allCases) { tool in
+                        let isSelected = (blockTool == tool)
+                        Button {
+                            blockTool = tool
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: tool.iconName)
+                                    .font(.system(size: 11, weight: .bold))
+                                Text(tool.rawValue.uppercased())
+                                    .font(.system(size: 9.5, weight: .black, design: .monospaced))
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 7)
+                            .background(isSelected ? theme.primaryAccent : theme.buttonBackground)
+                            .foregroundColor(isSelected ? .white : .white.opacity(0.8))
+                            .cornerRadius(6)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .stroke(isSelected ? Color.white.opacity(0.8) : theme.cardBorder.opacity(0.6), lineWidth: 1)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                // Dedicated UNDO & REDO Toolbar (Large touchable buttons that always register)
+                HStack(spacing: 8) {
+                    Button {
+                        undoBlockStroke()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.uturn.backward.circle.fill")
+                                .font(.system(size: 13, weight: .bold))
+                            Text(blockUndoStack.isEmpty ? "UNDO" : "UNDO (\(blockUndoStack.count))")
+                                .font(.system(size: 10.5, weight: .black, design: .monospaced))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 38)
+                        .background(blockUndoStack.isEmpty ? theme.buttonBackground.opacity(0.5) : theme.primaryAccent.opacity(0.3))
+                        .foregroundColor(blockUndoStack.isEmpty ? .white.opacity(0.35) : .white)
+                        .cornerRadius(6)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(blockUndoStack.isEmpty ? theme.cardBorder.opacity(0.3) : theme.primaryAccent.opacity(0.9), lineWidth: 1.2)
+                        )
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        redoBlockStroke()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.uturn.forward.circle.fill")
+                                .font(.system(size: 13, weight: .bold))
+                            Text(blockRedoStack.isEmpty ? "REDO" : "REDO (\(blockRedoStack.count))")
+                                .font(.system(size: 10.5, weight: .black, design: .monospaced))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 38)
+                        .background(blockRedoStack.isEmpty ? theme.buttonBackground.opacity(0.5) : theme.secondaryAccent.opacity(0.3))
+                        .foregroundColor(blockRedoStack.isEmpty ? .white.opacity(0.35) : .white)
+                        .cornerRadius(6)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(blockRedoStack.isEmpty ? theme.cardBorder.opacity(0.3) : theme.secondaryAccent.opacity(0.9), lineWidth: 1.2)
+                        )
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+
                 PixelCanvasView(
                     gridWidth: 16,
                     gridHeight: 16,
@@ -836,6 +883,11 @@ struct SkinAndTextureMakerView: View {
                     },
                     onPixelDraw: { (x, y) in
                         drawBlockPixel(x: x, y: y)
+                    },
+                    onStrokeStart: {
+                        if blockTool != .eyedropper {
+                            pushBlockUndo()
+                        }
                     }
                 )
                 .frame(maxWidth: .infinity)
@@ -965,25 +1017,45 @@ struct SkinAndTextureMakerView: View {
     // MARK: - Pixel Manipulation Helpers
 
     private func pushSkinUndo() {
-        if skinUndoStack.count >= 20 {
+        if skinUndoStack.count >= 50 {
             skinUndoStack.removeFirst()
         }
-        skinUndoStack.append(skinPixels)
+        skinUndoStack.append(SkinHistoryFrame(pixels: skinPixels, section: selectedBodySection, part: selectedPart))
         skinRedoStack.removeAll()
     }
 
     private func undoSkinStroke() {
-        guard let prev = skinUndoStack.popLast() else { return }
-        skinRedoStack.append(skinPixels)
-        skinPixels = prev
+        guard let prev = skinUndoStack.popLast() else {
+            let impact = UINotificationFeedbackGenerator()
+            impact.notificationOccurred(.warning)
+            showToast("Nothing to undo")
+            return
+        }
+        let impact = UIImpactFeedbackGenerator(style: .medium)
+        impact.impactOccurred()
+        skinRedoStack.append(SkinHistoryFrame(pixels: skinPixels, section: selectedBodySection, part: selectedPart))
+        skinPixels = prev.pixels
+        selectedBodySection = prev.section
+        selectedPart = prev.part
         updatePreviewCustomSkin()
+        showToast("Undid edit on \(prev.part.shortFaceName)")
     }
 
     private func redoSkinStroke() {
-        guard let next = skinRedoStack.popLast() else { return }
-        skinUndoStack.append(skinPixels)
-        skinPixels = next
+        guard let next = skinRedoStack.popLast() else {
+            let impact = UINotificationFeedbackGenerator()
+            impact.notificationOccurred(.warning)
+            showToast("Nothing to redo")
+            return
+        }
+        let impact = UIImpactFeedbackGenerator(style: .medium)
+        impact.impactOccurred()
+        skinUndoStack.append(SkinHistoryFrame(pixels: skinPixels, section: selectedBodySection, part: selectedPart))
+        skinPixels = next.pixels
+        selectedBodySection = next.section
+        selectedPart = next.part
         updatePreviewCustomSkin()
+        showToast("Redid edit on \(next.part.shortFaceName)")
     }
 
     private func drawSkinPixel(partX: Int, partY: Int) {
@@ -994,13 +1066,10 @@ struct SkinAndTextureMakerView: View {
 
         switch skinTool {
         case .pencil:
-            pushSkinUndo()
             skinPixels[skinY][skinX] = selectedColor
         case .eraser:
-            pushSkinUndo()
             skinPixels[skinY][skinX] = .clear
         case .bucket:
-            pushSkinUndo()
             floodFillSkin(partX: partX, partY: partY, fillColor: selectedColor)
         case .eyedropper:
             let picked = skinPixels[skinY][skinX]
@@ -1043,36 +1112,53 @@ struct SkinAndTextureMakerView: View {
     }
 
     private func pushBlockUndo() {
-        if blockUndoStack.count >= 20 {
+        if blockUndoStack.count >= 50 {
             blockUndoStack.removeFirst()
         }
-        blockUndoStack.append(blockPixels)
+        blockUndoStack.append(BlockHistoryFrame(pixels: blockPixels, blockType: selectedBlockType, face: selectedBlockFace))
         blockRedoStack.removeAll()
     }
 
     private func undoBlockStroke() {
-        guard let prev = blockUndoStack.popLast() else { return }
-        blockRedoStack.append(blockPixels)
-        blockPixels = prev
+        guard let prev = blockUndoStack.popLast() else {
+            let impact = UINotificationFeedbackGenerator()
+            impact.notificationOccurred(.warning)
+            showToast("Nothing to undo")
+            return
+        }
+        let impact = UIImpactFeedbackGenerator(style: .medium)
+        impact.impactOccurred()
+        blockRedoStack.append(BlockHistoryFrame(pixels: blockPixels, blockType: selectedBlockType, face: selectedBlockFace))
+        blockPixels = prev.pixels
+        selectedBlockType = prev.blockType
+        selectedBlockFace = prev.face
+        showToast("Undid edit on \(prev.face.rawValue.capitalized)")
     }
 
     private func redoBlockStroke() {
-        guard let next = blockRedoStack.popLast() else { return }
-        blockUndoStack.append(blockPixels)
-        blockPixels = next
+        guard let next = blockRedoStack.popLast() else {
+            let impact = UINotificationFeedbackGenerator()
+            impact.notificationOccurred(.warning)
+            showToast("Nothing to redo")
+            return
+        }
+        let impact = UIImpactFeedbackGenerator(style: .medium)
+        impact.impactOccurred()
+        blockUndoStack.append(BlockHistoryFrame(pixels: blockPixels, blockType: selectedBlockType, face: selectedBlockFace))
+        blockPixels = next.pixels
+        selectedBlockType = next.blockType
+        selectedBlockFace = next.face
+        showToast("Redid edit on \(next.face.rawValue.capitalized)")
     }
 
     private func drawBlockPixel(x: Int, y: Int) {
         guard x < 16 && y < 16 else { return }
         switch blockTool {
         case .pencil:
-            pushBlockUndo()
             blockPixels[y][x] = selectedColor
         case .eraser:
-            pushBlockUndo()
             blockPixels[y][x] = .gray
         case .bucket:
-            pushBlockUndo()
             floodFillBlock(startX: x, startY: y, fillColor: selectedColor)
         case .eyedropper:
             selectedColor = blockPixels[y][x]
@@ -1106,6 +1192,7 @@ struct SkinAndTextureMakerView: View {
     // MARK: - Preset Loading & PNG Serialization
 
     private func loadSkinFromPreset(_ preset: PlayerSkin) {
+        pushSkinUndo()
         let image = SkinTextureManager.shared.skinImage(for: preset)
         skinPixels = extractPixelsFromImage(image, width: 64, height: 64)
         activeSkinID = UUID()
@@ -1132,7 +1219,6 @@ struct SkinAndTextureMakerView: View {
     private func loadBlockTexture(_ block: BlockType, face: BlockFace = .side) {
         let image = BlockType.baseTextureImage(for: block, face: face, pack: .classic)
         blockPixels = extractPixelsFromImage(image, width: 16, height: 16)
-        blockUndoStack.removeAll()
     }
 
     private func exportPNGDataFromBlockPixels() -> UIImage {
@@ -1256,10 +1342,10 @@ struct SkinAndTextureMakerView: View {
     }
 
     private func showToast(_ text: String) {
-        statusToast = text
-        let impact = UINotificationFeedbackGenerator()
-        impact.notificationOccurred(.success)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+        withAnimation {
+            statusToast = text
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
             if statusToast == text {
                 withAnimation { statusToast = nil }
             }
@@ -1274,6 +1360,10 @@ struct PixelCanvasView: View {
     let gridHeight: Int
     let pixelColor: (Int, Int) -> UIColor
     let onPixelDraw: (Int, Int) -> Void
+    var onStrokeStart: (() -> Void)? = nil
+
+    @State private var isDrawingStroke: Bool = false
+    @State private var lastDrawnCoord: String? = nil
 
     var body: some View {
         GeometryReader { geo in
@@ -1329,9 +1419,20 @@ struct PixelCanvasView: View {
                     .onChanged { value in
                         let x = Int(value.location.x / cellWidth)
                         let y = Int(value.location.y / cellHeight)
-                        if x >= 0 && x < gridWidth && y >= 0 && y < gridHeight {
+                        guard x >= 0 && x < gridWidth && y >= 0 && y < gridHeight else { return }
+                        if !isDrawingStroke {
+                            isDrawingStroke = true
+                            onStrokeStart?()
+                        }
+                        let key = "\(x),\(y)"
+                        if lastDrawnCoord != key {
+                            lastDrawnCoord = key
                             onPixelDraw(x, y)
                         }
+                    }
+                    .onEnded { _ in
+                        isDrawingStroke = false
+                        lastDrawnCoord = nil
                     }
             )
         }
