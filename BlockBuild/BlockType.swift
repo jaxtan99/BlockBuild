@@ -115,28 +115,88 @@ enum BlockType: Int, CaseIterable, Identifiable, Codable {
         materials(for: Self.activeTexturePack)
     }
 
-    // MARK: - Custom User-Created Block Textures
-    private static var customBlockTextures: [BlockType: UIImage] = [:]
+    // MARK: - Multi-Face Texture Support
+    var editableFaces: [BlockFace] {
+        switch self {
+        case .woodLog:
+            return [.side, .top]
+        case .grass:
+            return [.side, .top, .bottom]
+        default:
+            return [.side]
+        }
+    }
 
-    static func setCustomTexture(for type: BlockType, image: UIImage) {
-        customBlockTextures[type] = image
+    func faceDisplayName(_ face: BlockFace) -> String {
+        switch self {
+        case .woodLog:
+            switch face {
+            case .side: return "Bark (Side)"
+            case .top, .bottom: return "Rings (Top/Bottom)"
+            }
+        case .grass:
+            switch face {
+            case .side: return "Side (Dirt & Grass)"
+            case .top: return "Top (Lush Grass)"
+            case .bottom: return "Bottom (Dirt)"
+            }
+        default:
+            return "All Sides"
+        }
+    }
+
+    func faceIconName(_ face: BlockFace) -> String {
+        switch face {
+        case .side: return "square.lefthalf.filled"
+        case .top: return "square.tophalf.filled"
+        case .bottom: return "square.bottomhalf.filled"
+        }
+    }
+
+    // MARK: - Custom User-Created Block Textures (Per Face)
+    private static var customBlockTextures: [BlockType: [BlockFace: UIImage]] = [:]
+
+    static func setCustomTexture(for type: BlockType, face: BlockFace = .side, image: UIImage) {
+        if customBlockTextures[type] == nil {
+            customBlockTextures[type] = [:]
+        }
+        customBlockTextures[type]?[face] = image
+        // For blocks that use one texture for all faces, mirror to top & bottom
+        if type.editableFaces.count == 1 && face == .side {
+            customBlockTextures[type]?[.top] = image
+            customBlockTextures[type]?[.bottom] = image
+        }
         materialCache.removeAll()
+        iconCache.removeAll()
     }
 
-    static func customTexture(for type: BlockType) -> UIImage? {
-        customBlockTextures[type]
+    static func customTexture(for type: BlockType, face: BlockFace = .side) -> UIImage? {
+        customBlockTextures[type]?[face]
     }
 
-    static func clearCustomTexture(for type: BlockType) {
-        customBlockTextures.removeValue(forKey: type)
+    static func clearCustomTexture(for type: BlockType, face: BlockFace? = nil) {
+        if let face = face {
+            customBlockTextures[type]?.removeValue(forKey: face)
+        } else {
+            customBlockTextures.removeValue(forKey: type)
+        }
         materialCache.removeAll()
+        iconCache.removeAll()
     }
 
-    static func baseTextureImage(for type: BlockType, pack: TexturePack = .classic) -> UIImage {
-        if let custom = customBlockTextures[type] {
+    static func textureImage(for type: BlockType, face: BlockFace, pack: TexturePack = .classic) -> UIImage {
+        if let custom = customBlockTextures[type]?[face] {
             return custom
         }
-        return generateTexture(for: type, face: .side, pack: pack)
+        // Fallback for uniform blocks if only .side was saved
+        if let customSide = customBlockTextures[type]?[.side], type != .woodLog && type != .grass {
+            return customSide
+        }
+        return generateTexture(for: type, face: face, pack: pack)
+    }
+
+    static func baseTextureImage(for type: BlockType, face: BlockFace = .side, pack: TexturePack = .classic) -> UIImage {
+        return textureImage(for: type, face: face, pack: pack)
     }
 
     func materials(for pack: TexturePack) -> [SCNMaterial] {
@@ -145,24 +205,25 @@ enum BlockType: Int, CaseIterable, Identifiable, Codable {
             return cached
         }
 
-        if let customImage = Self.customBlockTextures[self] {
-            let mat = Self.makeMaterial(image: customImage, type: self)
-            let mats = [mat]
-            Self.materialCache[key] = mats
-            return mats
-        }
         let mats: [SCNMaterial]
         if self == .woodLog {
-            let sideMat = Self.makeMaterial(image: Self.generateTexture(for: .woodLog, face: .side, pack: pack), type: self)
-            let topMat = Self.makeMaterial(image: Self.generateTexture(for: .woodLog, face: .top, pack: pack), type: self)
+            let sideImg = Self.textureImage(for: .woodLog, face: .side, pack: pack)
+            let topImg = Self.textureImage(for: .woodLog, face: .top, pack: pack)
+            let sideMat = Self.makeMaterial(image: sideImg, type: self)
+            let topMat = Self.makeMaterial(image: topImg, type: self)
+            // SCNBox faces order: 0: +Z, 1: +X, 2: -Z, 3: -X, 4: +Y (top), 5: -Y (bottom)
             mats = [sideMat, sideMat, sideMat, sideMat, topMat, topMat]
         } else if self == .grass {
-            let sideMat = Self.makeMaterial(image: Self.generateTexture(for: .grass, face: .side, pack: pack), type: self)
-            let topMat = Self.makeMaterial(image: Self.generateTexture(for: .grass, face: .top, pack: pack), type: self)
-            let bottomMat = Self.makeMaterial(image: Self.generateTexture(for: .dirt, face: .side, pack: pack), type: self)
+            let sideImg = Self.textureImage(for: .grass, face: .side, pack: pack)
+            let topImg = Self.textureImage(for: .grass, face: .top, pack: pack)
+            let botImg = Self.customBlockTextures[.grass]?[.bottom] ?? (Self.customBlockTextures[.dirt]?[.side] ?? Self.generateTexture(for: .dirt, face: .side, pack: pack))
+            let sideMat = Self.makeMaterial(image: sideImg, type: self)
+            let topMat = Self.makeMaterial(image: topImg, type: self)
+            let bottomMat = Self.makeMaterial(image: botImg, type: self)
             mats = [sideMat, sideMat, sideMat, sideMat, topMat, bottomMat]
         } else {
-            let mat = Self.makeMaterial(image: Self.generateTexture(for: self, face: .side, pack: pack), type: self)
+            let img = Self.textureImage(for: self, face: .side, pack: pack)
+            let mat = Self.makeMaterial(image: img, type: self)
             mats = [mat]
         }
         Self.materialCache[key] = mats
@@ -254,7 +315,10 @@ enum BlockType: Int, CaseIterable, Identifiable, Codable {
     }
 }
 
-enum BlockFace {
-    case side
-    case top
+enum BlockFace: String, CaseIterable, Identifiable, Codable {
+    case side = "side"
+    case top = "top"
+    case bottom = "bottom"
+
+    var id: String { rawValue }
 }

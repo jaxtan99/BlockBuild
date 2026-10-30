@@ -145,10 +145,12 @@ struct SkinAndTextureMakerView: View {
     @State private var skinUndoStack: [[[UIColor]]] = []
 
     // --- Texture Maker State ---
-    @State private var selectedBlockType: BlockType = .stone
+    @State private var selectedBlockType: BlockType = .woodLog
+    @State private var selectedBlockFace: BlockFace = .side
     @State private var blockPixels: [[UIColor]] = Array(repeating: Array(repeating: .gray, count: 16), count: 16)
     @State private var blockTool: PixelDrawingTool = .pencil
     @State private var blockUndoStack: [[[UIColor]]] = []
+    @State private var showBlock3DModelSheet: Bool = false
 
     var body: some View {
         let theme = themeMgr.currentTheme
@@ -191,10 +193,13 @@ struct SkinAndTextureMakerView: View {
         }
         .onAppear {
             loadSkinFromPreset(selectedSkinPreset)
-            loadBlockTexture(selectedBlockType)
+            loadBlockTexture(selectedBlockType, face: selectedBlockFace)
         }
         .sheet(isPresented: $show3DModelSheet) {
             full3DModelInspectorSheet(theme: theme)
+        }
+        .sheet(isPresented: $showBlock3DModelSheet) {
+            fullBlock3DModelInspectorSheet(theme: theme)
         }
     }
 
@@ -435,7 +440,7 @@ struct SkinAndTextureMakerView: View {
 
     @ViewBuilder
     private func textureMakerSection(theme: MenuTheme) -> some View {
-        GameCard(title: "CHOOSE BLOCK TEXTURE TO MODIFY", icon: "cube.transparent") {
+        GameCard(title: "CHOOSE BLOCK & FACE TO MODIFY", icon: "cube.transparent") {
             VStack(spacing: 10) {
                 // Block selector chips
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -444,7 +449,10 @@ struct SkinAndTextureMakerView: View {
                             let isSelected = (selectedBlockType == block)
                             Button {
                                 selectedBlockType = block
-                                loadBlockTexture(block)
+                                if !block.editableFaces.contains(selectedBlockFace) {
+                                    selectedBlockFace = block.editableFaces.first ?? .side
+                                }
+                                loadBlockTexture(block, face: selectedBlockFace)
                             } label: {
                                 HStack(spacing: 4) {
                                     Image(uiImage: block.iconImage)
@@ -468,6 +476,48 @@ struct SkinAndTextureMakerView: View {
                             .buttonStyle(.plain)
                         }
                     }
+                }
+
+                // Face Switcher: Multi-side selector (e.g. Log Bark vs Rings, Grass Top vs Side vs Dirt)
+                if selectedBlockType.editableFaces.count > 1 {
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "square.split.diagonal.2x2")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(theme.secondaryAccent)
+                            Text("SELECT FACE TO TEXTURE:")
+                                .font(.system(size: 9.5, weight: .black, design: .monospaced))
+                                .foregroundColor(theme.secondaryAccent)
+                        }
+
+                        HStack(spacing: 8) {
+                            ForEach(selectedBlockType.editableFaces) { face in
+                                let isFaceSelected = (selectedBlockFace == face)
+                                Button {
+                                    selectedBlockFace = face
+                                    loadBlockTexture(selectedBlockType, face: face)
+                                } label: {
+                                    HStack(spacing: 5) {
+                                        Image(systemName: selectedBlockType.faceIconName(face))
+                                            .font(.system(size: 11, weight: .bold))
+                                        Text(selectedBlockType.faceDisplayName(face).uppercased())
+                                            .font(.system(size: 10, weight: .black, design: .monospaced))
+                                    }
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(isFaceSelected ? theme.secondaryAccent.opacity(0.9) : theme.buttonBackground)
+                                    .foregroundColor(isFaceSelected ? .black : .white.opacity(0.85))
+                                    .cornerRadius(6)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 6)
+                                            .stroke(isFaceSelected ? theme.secondaryAccent : theme.cardBorder.opacity(0.6), lineWidth: 1.2)
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 2)
                 }
 
                 // Drawing tools for block texture
@@ -538,7 +588,11 @@ struct SkinAndTextureMakerView: View {
         }
 
         // 16x16 Block Canvas Card
-        GameCard(title: "16x16 BLOCK PIXEL CANVAS", icon: "square.grid.3x3.fill", badge: selectedBlockType.fullName.uppercased()) {
+        let faceBadge = selectedBlockType.editableFaces.count > 1
+            ? "\(selectedBlockType.fullName.uppercased()) • \(selectedBlockType.faceDisplayName(selectedBlockFace).uppercased())"
+            : selectedBlockType.fullName.uppercased()
+
+        GameCard(title: "16x16 BLOCK PIXEL CANVAS", icon: "square.grid.3x3.fill", badge: faceBadge) {
             VStack(spacing: 12) {
                 PixelCanvasView(
                     gridWidth: 16,
@@ -557,15 +611,31 @@ struct SkinAndTextureMakerView: View {
                 .cornerRadius(10)
                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(theme.cardBorder, lineWidth: 1.5))
 
-                HStack {
-                    Text("Modify pixels to customize block appearance")
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.70))
+                HStack(spacing: 8) {
+                    Button {
+                        showBlock3DModelSheet = true
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "cube.fill")
+                                .font(.system(size: 13, weight: .bold))
+                            Text("INSPECT 3D BLOCK")
+                                .font(.system(size: 11, weight: .black, design: .monospaced))
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 9)
+                        .background(
+                            LinearGradient(colors: [theme.primaryAccent, theme.secondaryAccent], startPoint: .leading, endPoint: .trailing)
+                        )
+                        .cornerRadius(8)
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.4), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
 
                     Spacer()
 
-                    GameSmallButton(title: "Apply Texture", icon: "checkmark.circle.fill", color: theme.primaryAccent, isProminent: true) {
-                        showToast("Texture for \(selectedBlockType.fullName) Saved!")
+                    GameSmallButton(title: "Save & Apply Texture", icon: "checkmark.circle.fill", color: theme.primaryAccent, isProminent: true) {
+                        applyBlockTextureAction()
                     }
                 }
             }
@@ -610,6 +680,48 @@ struct SkinAndTextureMakerView: View {
                         GameButton(title: "Save to Skins", subtitle: "Add to your skin library", icon: "square.and.arrow.down.fill", color: theme.secondaryAccent) {
                             saveCustomSkinAction()
                             show3DModelSheet = false
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Full 3D Block Model Inspector Sheet
+
+    @ViewBuilder
+    private func fullBlock3DModelInspectorSheet(theme: MenuTheme) -> some View {
+        GameMenuContainer(
+            title: "3D BLOCK INSPECTOR",
+            subtitle: "Drag to Rotate 360° • Perfect Cube Proportions",
+            icon: "view.3d",
+            onDismiss: { showBlock3DModelSheet = false }
+        ) {
+            let faceInfo = selectedBlockType.editableFaces.count > 1 ? "\(selectedBlockType.editableFaces.count) CUSTOM SIDES" : "UNIFORM"
+            GameCard(title: selectedBlockType.fullName.uppercased(), icon: "cube.fill", badge: faceInfo) {
+                VStack(spacing: 14) {
+                    Block3DModelPreviewView(
+                        blockType: selectedBlockType,
+                        currentPack: world.currentTexturePack,
+                        activeEditingFace: selectedBlockFace,
+                        activeFaceImage: exportPNGDataFromBlockPixels()
+                    )
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 320)
+                    .background(Color.black.opacity(0.75))
+                    .cornerRadius(12)
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(theme.cardBorder, lineWidth: 1.5))
+
+                    Text("Drag horizontally and vertically to rotate the block. Proportions are a true 1:1:1 geometric cube showing all custom faces (sides, top, and bottom) accurately.")
+                        .font(.system(size: 10.5, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.75))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 10)
+
+                    HStack(spacing: 12) {
+                        GameButton(title: "Apply This Texture", subtitle: "Render in your voxel world", icon: "checkmark.seal.fill", color: theme.primaryAccent, isProminent: true) {
+                            applyBlockTextureAction()
+                            showBlock3DModelSheet = false
                         }
                     }
                 }
@@ -767,9 +879,38 @@ struct SkinAndTextureMakerView: View {
         updatePreviewCustomSkin()
     }
 
-    private func loadBlockTexture(_ block: BlockType) {
-        let image = BlockType.baseTextureImage(for: block, pack: .classic)
+    private func loadBlockTexture(_ block: BlockType, face: BlockFace = .side) {
+        let image = BlockType.baseTextureImage(for: block, face: face, pack: .classic)
         blockPixels = extractPixelsFromImage(image, width: 16, height: 16)
+        blockUndoStack.removeAll()
+    }
+
+    private func exportPNGDataFromBlockPixels() -> UIImage {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0
+        format.opaque = (selectedBlockType != .water && selectedBlockType != .glass && selectedBlockType != .door)
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 16, height: 16), format: format)
+        return renderer.image { ctx in
+            let cg = ctx.cgContext
+            cg.interpolationQuality = .none
+            for y in 0..<16 {
+                for x in 0..<16 {
+                    let color = blockPixels[y][x]
+                    if color != .clear {
+                        color.setFill()
+                        cg.fill(CGRect(x: x, y: y, width: 1, height: 1))
+                    }
+                }
+            }
+        }
+    }
+
+    private func applyBlockTextureAction() {
+        let newImage = exportPNGDataFromBlockPixels()
+        BlockType.setCustomTexture(for: selectedBlockType, face: selectedBlockFace, image: newImage)
+        world.applyTexturePack()
+        let faceName = selectedBlockType.editableFaces.count > 1 ? " (\(selectedBlockType.faceDisplayName(selectedBlockFace)))" : ""
+        showToast("Texture for \(selectedBlockType.fullName)\(faceName) Saved & Applied!")
     }
 
     private func extractPixelsFromImage(_ image: UIImage, width: Int, height: Int) -> [[UIColor]] {
@@ -1034,6 +1175,142 @@ struct Character3DModelPreviewView: UIViewRepresentable {
             node.eulerAngles.y = currentAngleY + deltaY
 
             if gesture.state == .ended || gesture.state == .cancelled {
+                currentAngleY = node.eulerAngles.y
+            }
+        }
+    }
+}
+
+// MARK: - 3D Block Model Preview (SceneKit Interactive Block Scene)
+
+struct Block3DModelPreviewView: UIViewRepresentable {
+    let blockType: BlockType
+    let currentPack: TexturePack
+    let activeEditingFace: BlockFace
+    let activeFaceImage: UIImage
+
+    func makeUIView(context: Context) -> SCNView {
+        let scnView = SCNView()
+        let scene = SCNScene()
+        scnView.scene = scene
+        scnView.backgroundColor = .clear
+        scnView.antialiasingMode = .multisampling4X
+        scnView.autoenablesDefaultLighting = false
+
+        // Camera positioned at isometric vantage point
+        let cameraNode = SCNNode()
+        let camera = SCNCamera()
+        camera.zNear = 0.1
+        camera.zFar = 20.0
+        cameraNode.camera = camera
+        cameraNode.position = SCNVector3(0, 0, 2.8)
+        scene.rootNode.addChildNode(cameraNode)
+
+        // Lighting
+        let ambient = SCNNode()
+        ambient.light = SCNLight()
+        ambient.light?.type = .ambient
+        ambient.light?.color = UIColor(white: 0.65, alpha: 1.0)
+        scene.rootNode.addChildNode(ambient)
+
+        let keyLight = SCNNode()
+        keyLight.light = SCNLight()
+        keyLight.light?.type = .directional
+        keyLight.light?.color = UIColor(white: 0.85, alpha: 1.0)
+        keyLight.position = SCNVector3(2.0, 3.5, 2.5)
+        keyLight.eulerAngles = SCNVector3(-0.6, 0.45, 0)
+        scene.rootNode.addChildNode(keyLight)
+
+        // Block Container Node
+        let blockRoot = SCNNode()
+        blockRoot.name = "blockRoot"
+        // Initial angled view showcasing both side and top faces
+        blockRoot.eulerAngles = SCNVector3(0.42, 0.65, 0)
+        scene.rootNode.addChildNode(blockRoot)
+
+        // Interactive Pan Gesture (both Yaw and Pitch for inspecting all 6 faces)
+        let panGesture = UIPanGestureRecognizer(target: context.coordinator, action: #selector(BlockCoordinator.handlePan(_:)))
+        scnView.addGestureRecognizer(panGesture)
+        context.coordinator.blockRoot = blockRoot
+
+        updateBlockNode(in: blockRoot)
+        return scnView
+    }
+
+    func updateUIView(_ uiView: SCNView, context: Context) {
+        if let blockRoot = uiView.scene?.rootNode.childNode(withName: "blockRoot", recursively: false) {
+            context.coordinator.blockRoot = blockRoot
+            updateBlockNode(in: blockRoot)
+        }
+    }
+
+    private func updateBlockNode(in parent: SCNNode) {
+        parent.enumerateChildNodes { node, _ in
+            node.removeFromParentNode()
+        }
+
+        // True geometric cube (1.0 x 1.0 x 1.0) ensuring exact proportional block shape
+        let box = SCNBox(width: 1.0, height: 1.0, length: 1.0, chamferRadius: 0.0)
+
+        // Generate accurate materials for all 6 faces
+        let sideImage: UIImage = (activeEditingFace == .side)
+            ? activeFaceImage
+            : BlockType.textureImage(for: blockType, face: .side, pack: currentPack)
+
+        let topImage: UIImage = (activeEditingFace == .top)
+            ? activeFaceImage
+            : BlockType.textureImage(for: blockType, face: .top, pack: currentPack)
+
+        let botImage: UIImage = (activeEditingFace == .bottom)
+            ? activeFaceImage
+            : BlockType.textureImage(for: blockType, face: .bottom, pack: currentPack)
+
+        let sideMat = makeMaterial(image: sideImage)
+        let topMat = makeMaterial(image: topImage)
+        let botMat = makeMaterial(image: botImage)
+
+        // SCNBox materials: [Front(+Z), Right(+X), Back(-Z), Left(-X), Top(+Y), Bottom(-Y)]
+        if blockType == .woodLog {
+            box.materials = [sideMat, sideMat, sideMat, sideMat, topMat, topMat]
+        } else if blockType == .grass {
+            box.materials = [sideMat, sideMat, sideMat, sideMat, topMat, botMat]
+        } else {
+            box.materials = [sideMat, sideMat, sideMat, sideMat, topMat, botMat]
+        }
+
+        let cubeNode = SCNNode(geometry: box)
+        parent.addChildNode(cubeNode)
+    }
+
+    private func makeMaterial(image: UIImage) -> SCNMaterial {
+        let mat = SCNMaterial()
+        mat.diffuse.contents = image
+        mat.diffuse.magnificationFilter = .nearest
+        mat.diffuse.minificationFilter = .nearest
+        mat.diffuse.mipFilter = .none
+        mat.lightingModel = .lambert
+        return mat
+    }
+
+    func makeCoordinator() -> BlockCoordinator {
+        BlockCoordinator()
+    }
+
+    final class BlockCoordinator: NSObject {
+        weak var blockRoot: SCNNode?
+        private var currentAngleX: Float = 0.42
+        private var currentAngleY: Float = 0.65
+
+        @objc func handlePan(_ gesture: UIPanGestureRecognizer) {
+            guard let node = blockRoot else { return }
+            let translation = gesture.translation(in: gesture.view)
+            let deltaY = Float(translation.x) * 0.015
+            let deltaX = Float(translation.y) * 0.015
+            node.eulerAngles.y = currentAngleY + deltaY
+            node.eulerAngles.x = max(-Float.pi / 2.2, min(Float.pi / 2.2, currentAngleX + deltaX))
+
+            if gesture.state == .ended || gesture.state == .cancelled {
+                currentAngleX = node.eulerAngles.x
                 currentAngleY = node.eulerAngles.y
             }
         }
