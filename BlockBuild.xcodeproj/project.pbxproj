@@ -15,6 +15,7 @@
 		A10000080000000000000001 /* AIGameStudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000080000000000000001 /* AIGameStudio.swift */; };
 		A10000090000000000000001 /* MenuTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000090000000000000001 /* MenuTheme.swift */; };
 		A100000A0000000000000001 /* SkinAndTextureMakerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000A0000000000000001 /* SkinAndTextureMakerView.swift */; };
+		A100000B0000000000000001 /* GameShaderPreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000B0000000000000001 /* GameShaderPreset.swift */; };
 		A10000050000000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000050000000000000001 /* Assets.xcassets */; };
 		B100010000000000000001 /* AppIcon-ObsidianNeon.png in Resources */ = {isa = PBXBuildFile; fileRef = B200010000000000000001 /* AppIcon-ObsidianNeon.png */; };
 		B100020000000000000001 /* AppIcon-ObsidianNeon60x60@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = B200020000000000000001 /* AppIcon-ObsidianNeon60x60@2x.png */; };
@@ -52,6 +53,7 @@
 		A20000080000000000000001 /* AIGameStudio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIGameStudio.swift; sourceTree = "<group>"; };
 		A20000090000000000000001 /* MenuTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuTheme.swift; sourceTree = "<group>"; };
 		A200000A0000000000000001 /* SkinAndTextureMakerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkinAndTextureMakerView.swift; sourceTree = "<group>"; };
+		A200000B0000000000000001 /* GameShaderPreset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameShaderPreset.swift; sourceTree = "<group>"; };
 		A20000050000000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A20000060000000000000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B200010000000000000001 /* AppIcon-ObsidianNeon.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "AppIcon-ObsidianNeon.png"; sourceTree = "<group>"; };
@@ -110,6 +112,7 @@
 				A20000080000000000000001 /* AIGameStudio.swift */,
 				A20000090000000000000001 /* MenuTheme.swift */,
 				A200000A0000000000000001 /* SkinAndTextureMakerView.swift */,
+				A200000B0000000000000001 /* GameShaderPreset.swift */,
 				A20000050000000000000001 /* Assets.xcassets */,
 				A20000060000000000000001 /* Info.plist */,
 				B200010000000000000001 /* AppIcon-ObsidianNeon.png */,
@@ -249,6 +252,7 @@
 				A10000080000000000000001 /* AIGameStudio.swift in Sources */,
 				A10000090000000000000001 /* MenuTheme.swift in Sources */,
 				A100000A0000000000000001 /* SkinAndTextureMakerView.swift in Sources */,
+				A100000B0000000000000001 /* GameShaderPreset.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

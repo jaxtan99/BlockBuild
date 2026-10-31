@@ -432,7 +432,7 @@ struct ControlLayoutConfig: Codable, Equatable {
     var hotbarScale: CGFloat = 1.0
     var controlOpacity: Double = 0.92
     var lookSensitivity: Float = 1.0
-    var movementSpeedMultiplier: Float = 0.6
+    var movementSpeedMultiplier: Float = 1.0
     var swapLeftRight: Bool = false
 
     static let `default` = ControlLayoutConfig()
@@ -463,7 +463,7 @@ struct ControlLayoutConfig: Codable, Equatable {
         hotbarScale: CGFloat = 1.0,
         controlOpacity: Double = 0.92,
         lookSensitivity: Float = 1.0,
-        movementSpeedMultiplier: Float = 0.6,
+        movementSpeedMultiplier: Float = 1.0,
         swapLeftRight: Bool = false
     ) {
         self.joystickOffsetX = joystickOffsetX
@@ -503,7 +503,8 @@ struct ControlLayoutConfig: Codable, Equatable {
         hotbarScale = try container.decodeIfPresent(CGFloat.self, forKey: .hotbarScale) ?? 1.0
         controlOpacity = try container.decodeIfPresent(Double.self, forKey: .controlOpacity) ?? 0.92
         lookSensitivity = try container.decodeIfPresent(Float.self, forKey: .lookSensitivity) ?? 1.0
-        movementSpeedMultiplier = try container.decodeIfPresent(Float.self, forKey: .movementSpeedMultiplier) ?? 0.6
+        let rawSpeed = try container.decodeIfPresent(Float.self, forKey: .movementSpeedMultiplier) ?? 1.0
+        movementSpeedMultiplier = (rawSpeed < 0.4 || rawSpeed > 3.0) ? 1.0 : rawSpeed
         swapLeftRight = try container.decodeIfPresent(Bool.self, forKey: .swapLeftRight) ?? false
     }
 }
@@ -1067,6 +1068,31 @@ final class VoxelWorld: NSObject, ObservableObject {
     @Published var selectedSkin: PlayerSkin = .steve
     @Published var currentTexturePack: TexturePack = .classic
 
+    // MARK: - Shaders Engine State & Hardware Capability
+    static var deviceHas6GBRAMOrHigher: Bool {
+        // iOS devices with 6GB+ RAM (e.g. iPhone 12 Pro, 13 Pro, 14+, 15+) report ~5.5-5.8GB in physicalMemory
+        ProcessInfo.processInfo.physicalMemory >= 5_500_000_000
+    }
+
+    static var defaultShaderForDevice: GameShaderPreset {
+        deviceHas6GBRAMOrHigher ? .vibrant : .vanilla
+    }
+
+    @Published var currentShader: GameShaderPreset = {
+        if let saved = UserDefaults.standard.string(forKey: "blockbuild_active_shader"),
+           let preset = GameShaderPreset(rawValue: saved) {
+            return preset
+        }
+        return defaultShaderForDevice
+    }()
+
+    /// Incremented whenever custom textures or texture packs update, forcing hotbar and inventory icons to refresh
+    @Published var textureUpdateVersion: Int = 0
+
+    var ambientLight: SCNLight? = nil
+    var sunLight: SCNLight? = nil
+    var sunNode: SCNNode? = nil
+
     // AI Game Studio State
     @Published var customWorldTypes: [CustomWorldType] = []
     @Published var activeCustomWorld: CustomWorldType? = nil
@@ -1312,9 +1338,9 @@ final class VoxelWorld: NSObject, ObservableObject {
         if let data = UserDefaults.standard.data(forKey: controlLayoutKey),
            let decoded = try? JSONDecoder().decode(ControlLayoutConfig.self, from: data) {
             controlLayout = decoded
-            if UserDefaults.standard.object(forKey: "blockbuild_speed_v30_migrated") == nil {
-                controlLayout.movementSpeedMultiplier = 0.6
-                UserDefaults.standard.set(true, forKey: "blockbuild_speed_v30_migrated")
+            if UserDefaults.standard.object(forKey: "blockbuild_speed_v31_migrated") == nil {
+                controlLayout.movementSpeedMultiplier = 1.0
+                UserDefaults.standard.set(true, forKey: "blockbuild_speed_v31_migrated")
                 saveControlLayout()
             }
             if UserDefaults.standard.object(forKey: "blockbuild_door_btn_v2_migrated") == nil {
@@ -1408,28 +1434,31 @@ final class VoxelWorld: NSObject, ObservableObject {
     }
 
     private func setupScene() {
-        scene.background.contents = UIColor(red: 0.60, green: 0.80, blue: 1.0, alpha: 1.0)
+        scene.background.contents = currentShader.skyColor
         scene.fogStartDistance = 0.0
         scene.fogEndDistance = 0.0
-        scene.fogColor = UIColor(red: 0.65, green: 0.83, blue: 1.0, alpha: 1.0)
+        scene.fogColor = currentShader.fogColor
 
         let ambientNode = SCNNode()
-        let ambientLight = SCNLight()
-        ambientLight.type = .ambient
-        ambientLight.intensity = 560
-        ambientLight.color = UIColor(white: 0.96, alpha: 1.0)
-        ambientNode.light = ambientLight
+        let ambLight = SCNLight()
+        ambLight.type = .ambient
+        ambLight.intensity = currentShader.ambientIntensity
+        ambLight.color = currentShader.ambientColor
+        ambientNode.light = ambLight
+        ambientLight = ambLight
         scene.rootNode.addChildNode(ambientNode)
 
-        let sunNode = SCNNode()
-        let sunLight = SCNLight()
-        sunLight.type = .directional
-        sunLight.intensity = 880
-        sunLight.color = UIColor(red: 1.0, green: 0.99, blue: 0.94, alpha: 1.0)
-        sunLight.castsShadow = false
-        sunNode.light = sunLight
-        sunNode.eulerAngles = SCNVector3(-Float.pi / 3.0, Float.pi / 4.0, 0)
-        scene.rootNode.addChildNode(sunNode)
+        let sNode = SCNNode()
+        let sLight = SCNLight()
+        sLight.type = .directional
+        sLight.intensity = currentShader.sunIntensity
+        sLight.color = currentShader.sunColor
+        sLight.castsShadow = currentShader.castsShadows
+        sNode.light = sLight
+        sNode.eulerAngles = currentShader.sunEulerAngles
+        sunLight = sLight
+        sunNode = sNode
+        scene.rootNode.addChildNode(sNode)
 
         let camera = SCNCamera()
         camera.fieldOfView = 74
@@ -1443,6 +1472,9 @@ final class VoxelWorld: NSObject, ObservableObject {
         scene.rootNode.addChildNode(playersRootNode)
         applyRenderDistance()
 
+        // Apply shader lighting & post-processing effects
+        applyShaderPreset(currentShader, isInitial: true)
+
         // Build Local Player Avatar Node (for 3rd person views) & First Person Arm
         refreshLocalPlayerAvatarNode()
 
@@ -1455,6 +1487,95 @@ final class VoxelWorld: NSObject, ObservableObject {
         selectionBoxNode = SCNNode(geometry: highlightGeo)
         selectionBoxNode.isHidden = true
         scene.rootNode.addChildNode(selectionBoxNode)
+    }
+
+    // MARK: - Shaders Engine & Real-Time Performance Stabilization
+
+    func applyShaderPreset(_ preset: GameShaderPreset, isInitial: Bool = false) {
+        currentShader = preset
+        UserDefaults.standard.set(preset.rawValue, forKey: "blockbuild_active_shader")
+
+        // 1. Sky Color
+        scene.background.contents = preset.skyColor
+
+        // 2. Atmospheric Distance Fog (smooth distance fade matching Minecraft OptiFine/Iris fog culling)
+        let dist = Float(renderDistance * 16)
+        if preset == .vanilla {
+            scene.fogStartDistance = 0.0
+            scene.fogEndDistance = 0.0
+            scene.fogColor = preset.fogColor
+        } else {
+            scene.fogStartDistance = CGFloat(max(8.0, dist * 0.40))
+            scene.fogEndDistance = CGFloat(dist * 0.94)
+            scene.fogColor = preset.fogColor
+        }
+
+        // 3. Sun Directional Light & Minecraft-style Stabilized Shadow Box
+        if let sun = sunLight {
+            sun.color = preset.sunColor
+            sun.intensity = preset.sunIntensity
+            sun.castsShadow = preset.castsShadows
+
+            if preset.castsShadows {
+                // Stabilized shadow map settings to guarantee zero lag:
+                // - Tight orthographic projection focused directly around active player
+                // - Fast 1024x1024 shadow map resolution
+                // - Deferred shadow rendering mode
+                // - Clamped sample count (2 or 4 samples for smooth anti-aliased shadows without GPU stall)
+                sun.shadowMode = .deferred
+                sun.orthographicScale = 28.0
+                sun.zNear = 0.5
+                sun.zFar = 60.0
+                sun.shadowMapSize = CGSize(width: 1024, height: 1024)
+                sun.shadowSampleCount = isPerformanceStabilizationEnabled ? 2 : 4
+                sun.shadowRadius = 1.4
+                sun.shadowColor = preset.shadowColor
+                sun.shadowBias = 0.002
+            }
+        }
+        if let sNode = sunNode {
+            sNode.eulerAngles = preset.sunEulerAngles
+            sNode.position = SCNVector3(playerPosition.x, playerPosition.y + 14.0, playerPosition.z)
+        }
+
+        // 4. Ambient Light
+        if let amb = ambientLight {
+            amb.color = preset.ambientColor
+            amb.intensity = preset.ambientIntensity
+        }
+
+        // 5. Camera Post-Processing (HDR & Bloom)
+        if let camera = cameraNode.camera {
+            camera.wantsHDR = (preset != .vanilla)
+            camera.bloomIntensity = preset.bloomIntensity
+            camera.bloomThreshold = preset.bloomThreshold
+            camera.bloomBlurRadius = isPerformanceStabilizationEnabled ? min(preset.bloomBlurRadius, 10.0) : preset.bloomBlurRadius
+            camera.vignettingIntensity = preset.vignettingIntensity
+            camera.vignettingPower = preset.vignettingPower
+            camera.colorFringeStrength = preset.colorFringeStrength
+        }
+
+        // 6. Water Shaders (GPU surface modifier for wave shimmers)
+        updateWaterShaderModifiers(preset: preset)
+
+        if !isInitial {
+            statusToast = "Applied \(preset.displayName)"
+        }
+    }
+
+    private func updateWaterShaderModifiers(preset: GameShaderPreset) {
+        let waterMat = sharedGeometries[.water]?.firstMaterial
+        if preset.hasWaterWaves {
+            let waterSurfaceShader = """
+            #pragma body
+            float wave = sin(_surface.diffuseTexcoord.x * 22.0 + u_time * 2.6) * cos(_surface.diffuseTexcoord.y * 22.0 + u_time * 2.0);
+            _surface.specular = vec4(0.55, 0.70, 0.95, 1.0) * max(0.0, wave * 0.5 + 0.5);
+            _surface.shininess = 28.0;
+            """
+            waterMat?.shaderModifiers = [.surface: waterSurfaceShader]
+        } else {
+            waterMat?.shaderModifiers = nil
+        }
     }
 
     func setRenderDistance(_ distance: Int) {
@@ -1686,6 +1807,8 @@ final class VoxelWorld: NSObject, ObservableObject {
 
     func applyTexturePack() {
         BlockType.activeTexturePack = currentTexturePack
+        textureUpdateVersion += 1
+        objectWillChange.send()
 
         for type in BlockType.allCases {
             sharedGeometries[type]?.materials = type.materials(for: currentTexturePack)
@@ -1706,6 +1829,8 @@ final class VoxelWorld: NSObject, ObservableObject {
                 node.geometry = maskedWaterGeometry(level: 4, faceMask: mask)
             }
         }
+
+        updateWaterShaderModifiers(preset: currentShader)
 
         statusToast = "Applied \(currentTexturePack.displayName) Pack"
     }
@@ -4931,15 +5056,25 @@ final class VoxelWorld: NSObject, ObservableObject {
         updateCameraTransform()
     }
 
+    private var lastPhysicsTimestamp: CFTimeInterval = 0
+
     func stepPhysics(dt: Float) {
+        // Enforce single execution per frame to prevent duplicate loop speedups across world loads
+        let now = CACurrentMediaTime()
+        if lastPhysicsTimestamp > 0 && (now - lastPhysicsTimestamp) < 0.005 {
+            return
+        }
+        lastPhysicsTimestamp = now
+
         // Clamping dt to 0.08s (12.5 FPS) prevents large physics tunneling while ensuring
         // player movement speed remains completely consistent even when framerate dips.
         let clampedDt = min(dt, 0.08)
-        let mult = max(0.05, min(10.0, controlLayout.movementSpeedMultiplier))
-        let baseWalkSpeed: Float = 2.75
-        let baseFlySpeed: Float = 4.2
-        let horizSpeed: Float = (isFlying ? baseFlySpeed : baseWalkSpeed) * mult
-        let flyVerticalSpeed: Float = 4.2 * mult
+        let mult = max(0.2, min(3.0, controlLayout.movementSpeedMultiplier))
+        // Minecraft exact run speed: ~4.8 blocks (meters) per second
+        let baseRunSpeed: Float = 4.8
+        let baseFlySpeed: Float = 7.5
+        let horizSpeed: Float = (isFlying ? baseFlySpeed : baseRunSpeed) * mult
+        let flyVerticalSpeed: Float = 5.5 * mult
 
         let forwardX = -sin(yaw)
         let forwardZ = -cos(yaw)
@@ -5139,6 +5274,11 @@ final class VoxelWorld: NSObject, ObservableObject {
         }
 
         SCNTransaction.commit()
+
+        // Keep directional shadow map centered above player for zero-lag stabilized shadows
+        if let sNode = sunNode {
+            sNode.position = SCNVector3(playerPosition.x, playerPosition.y + 14.0, playerPosition.z)
+        }
     }
 
     func updateCrosshairTarget() {

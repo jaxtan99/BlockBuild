@@ -475,6 +475,7 @@ struct ContentView: View {
                                     .resizable()
                                     .frame(width: 30, height: 30)
                                     .cornerRadius(3)
+                                    .id("hotbar-icon-\(block.rawValue)-\(world.textureUpdateVersion)")
 
                                 Text("\(count)")
                                     .font(.system(size: 10, weight: .black, design: .monospaced))
@@ -2060,6 +2061,84 @@ struct TexturePacksSheet: View {
     }
 }
 
+// MARK: - Shaders Sheet (Real-Time Voxel Lighting & Hardware Optimization)
+
+struct ShadersSheet: View {
+    @ObservedObject var world: VoxelWorld
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var themeMgr = MenuThemeManager.shared
+
+    var body: some View {
+        let theme = themeMgr.currentTheme
+
+        GameMenuContainer(
+            title: "SHADERS & VISUALS",
+            subtitle: "Select Shader Pack • Real-Time Voxel Lighting",
+            icon: "sparkles",
+            onDismiss: { dismiss() }
+        ) {
+            // Hardware capability & Minecraft-style optimization banner
+            GameCard(
+                title: "SHADER ENGINE & HARDWARE",
+                icon: "gauge.with.dots.needle.bottom.50percent",
+                badge: VoxelWorld.deviceHas6GBRAMOrHigher ? "6GB+ RAM (DEFAULT ON)" : "OPTIMIZED MODE"
+            ) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(
+                        VoxelWorld.deviceHas6GBRAMOrHigher
+                            ? "Your device has 6GB+ RAM — high-performance shaders are enabled by default with real-time directional sun shadows, HDR bloom and animated water shimmer."
+                            : "Your device is running in battery & performance optimized mode. Vanilla is active by default to prevent lag, but you can select any shader pack below!"
+                    )
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.80))
+
+                    Text("• Minecraft-style stabilized shadow box centered directly on player position.")
+                        .font(.system(size: 9.5, design: .monospaced))
+                        .foregroundColor(theme.secondaryAccent)
+                    Text("• 1024x1024 deferred shadow maps with anti-aliased soft penumbra.")
+                        .font(.system(size: 9.5, design: .monospaced))
+                        .foregroundColor(theme.secondaryAccent)
+                }
+            }
+
+            // Presets Cards
+            ForEach(GameShaderPreset.allCases) { shader in
+                let isSelected = (world.currentShader == shader)
+
+                GameCard(
+                    title: shader.displayName.uppercased(),
+                    icon: shader.iconName,
+                    badge: isSelected ? "ACTIVE" : nil
+                ) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(shader.subtitle)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.75))
+
+                        HStack {
+                            Circle()
+                                .fill(shader.themeColor)
+                                .frame(width: 10, height: 10)
+                            Text(shader == .vanilla ? "Zero GPU overhead" : (shader.castsShadows ? "HDR Bloom • Real-Time Shadows • Waves" : "HDR Bloom • Sky Tint"))
+                                .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                                .foregroundColor(.white.opacity(0.65))
+
+                            Spacer()
+
+                            if !isSelected {
+                                GameSmallButton(title: "Apply Shader", icon: "checkmark", color: shader.themeColor, isProminent: true) {
+                                    UISelectionFeedbackGenerator().selectionChanged()
+                                    world.applyShaderPreset(shader)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 struct InGameSettingsSheet: View {
     @ObservedObject var world: VoxelWorld
     @Binding var showingSkinsSheet: Bool
@@ -2068,6 +2147,7 @@ struct InGameSettingsSheet: View {
     @Binding var showingSkinMakerSheet: Bool
     @Environment(\.dismiss) private var dismiss
     @State private var showRefillToast: Bool = false
+    @State private var showingShadersSheet: Bool = false
 
     @ObservedObject private var themeMgr = MenuThemeManager.shared
 
@@ -2228,6 +2308,15 @@ struct InGameSettingsSheet: View {
                         icon: "gauge.with.dots.needle.bottom.50percent",
                         isOn: $world.isPerformanceStabilizationEnabled
                     )
+
+                    GameButton(
+                        title: "Shaders & Visuals",
+                        subtitle: "Active: \(world.currentShader.displayName)",
+                        icon: world.currentShader.iconName,
+                        color: world.currentShader.themeColor
+                    ) {
+                        showingShadersSheet = true
+                    }
                 }
             }
 
@@ -2249,11 +2338,8 @@ struct InGameSettingsSheet: View {
                     GameSliderRow(
                         title: "Movement Speed",
                         icon: "figure.walk",
-                        value: Binding(
-                            get: { world.controlLayout.movementSpeedMultiplier / 0.2 },
-                            set: { world.controlLayout.movementSpeedMultiplier = $0 * 0.2 }
-                        ),
-                        range: 0.5...2.5,
+                        value: $world.controlLayout.movementSpeedMultiplier,
+                        range: 0.5...2.0,
                         step: 0.1,
                         formatString: "%.1fx"
                     )
@@ -2303,6 +2389,9 @@ struct InGameSettingsSheet: View {
                     )
                 }
             }
+        }
+        .sheet(isPresented: $showingShadersSheet) {
+            ShadersSheet(world: world)
         }
     }
 }
@@ -2514,6 +2603,10 @@ struct VoxelSceneView: UIViewRepresentable {
         Coordinator(world: world)
     }
 
+    static func dismantleUIView(_ uiView: SCNView, coordinator: Coordinator) {
+        coordinator.stopDisplayLink()
+    }
+
     func makeUIView(context: Context) -> SCNView {
         let scnView = SCNView()
         world.registerSceneView(scnView)
@@ -2561,17 +2654,39 @@ struct VoxelSceneView: UIViewRepresentable {
         private var lastPanPoint: CGPoint = .zero
         private var displayLink: CADisplayLink?
         private var lastTimestamp: CFTimeInterval = 0
+        private static weak var activeCoordinator: Coordinator?
 
         init(world: VoxelWorld) {
             self.world = world
         }
 
         func startDisplayLink() {
+            // Guarantee only ONE active display link runs across the entire app
+            Self.activeCoordinator?.stopDisplayLink()
+            Self.activeCoordinator = self
+
             displayLink?.invalidate()
+            displayLink = nil
+            lastTimestamp = 0
+
             let link = CADisplayLink(target: self, selector: #selector(stepFrame(_:)))
             link.add(to: .main, forMode: .common)
             displayLink = link
             updateFrameRate()
+        }
+
+        func stopDisplayLink() {
+            displayLink?.invalidate()
+            displayLink = nil
+            lastTimestamp = 0
+            if Self.activeCoordinator === self {
+                Self.activeCoordinator = nil
+            }
+        }
+
+        deinit {
+            displayLink?.invalidate()
+            displayLink = nil
         }
 
         func updateFrameRate() {

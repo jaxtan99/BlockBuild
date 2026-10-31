@@ -106,7 +106,17 @@ enum BlockType: Int, CaseIterable, Identifiable, Codable {
         if let cached = Self.iconCache[key] {
             return cached
         }
-        let img = Self.generateTexture(for: self, face: .side, pack: pack)
+        // Custom texture prioritization for inventory and UI icons
+        let img: UIImage
+        if let customSide = Self.customTexture(for: self, face: .side) {
+            img = customSide
+        } else if let customTop = Self.customTexture(for: self, face: .top) {
+            img = customTop
+        } else if let customBottom = Self.customTexture(for: self, face: .bottom) {
+            img = customBottom
+        } else {
+            img = Self.textureImage(for: self, face: .side, pack: pack)
+        }
         Self.iconCache[key] = img
         return img
     }
@@ -153,18 +163,63 @@ enum BlockType: Int, CaseIterable, Identifiable, Codable {
         }
     }
 
-    // MARK: - Custom User-Created Block Textures (Per Face)
-    private static var customBlockTextures: [BlockType: [BlockFace: UIImage]] = [:]
+    // MARK: - Custom User-Created Block Textures (Per Face & Persistent)
+    private static var customBlockTextures: [BlockType: [BlockFace: UIImage]] = {
+        var dict: [BlockType: [BlockFace: UIImage]] = [:]
+        let dir = customTexturesDirectory
+        for type in BlockType.allCases {
+            for face in [BlockFace.side, BlockFace.top, BlockFace.bottom] {
+                let fileURL = dir.appendingPathComponent("\(type.rawValue)_\(face.rawValue).png")
+                if let data = try? Data(contentsOf: fileURL), let img = UIImage(data: data) {
+                    if dict[type] == nil {
+                        dict[type] = [:]
+                    }
+                    dict[type]?[face] = img
+                }
+            }
+        }
+        return dict
+    }()
+
+    private static var customTexturesDirectory: URL {
+        let paths = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
+        let dir = paths[0].appendingPathComponent("CustomBlockTextures", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    private static func saveCustomTextureToDisk(type: BlockType, face: BlockFace, image: UIImage) {
+        guard let data = image.pngData() else { return }
+        let fileURL = customTexturesDirectory.appendingPathComponent("\(type.rawValue)_\(face.rawValue).png")
+        try? data.write(to: fileURL)
+    }
+
+    private static func removeCustomTextureFromDisk(type: BlockType, face: BlockFace?) {
+        let dir = customTexturesDirectory
+        if let face = face {
+            let fileURL = dir.appendingPathComponent("\(type.rawValue)_\(face.rawValue).png")
+            try? FileManager.default.removeItem(at: fileURL)
+        } else {
+            for f in [BlockFace.side, BlockFace.top, BlockFace.bottom] {
+                let fileURL = dir.appendingPathComponent("\(type.rawValue)_\(f.rawValue).png")
+                try? FileManager.default.removeItem(at: fileURL)
+            }
+        }
+    }
 
     static func setCustomTexture(for type: BlockType, face: BlockFace = .side, image: UIImage) {
         if customBlockTextures[type] == nil {
             customBlockTextures[type] = [:]
         }
         customBlockTextures[type]?[face] = image
+        saveCustomTextureToDisk(type: type, face: face, image: image)
+
         // For blocks that use one texture for all faces, mirror to top & bottom
         if type.editableFaces.count == 1 && face == .side {
             customBlockTextures[type]?[.top] = image
             customBlockTextures[type]?[.bottom] = image
+            saveCustomTextureToDisk(type: type, face: .top, image: image)
+            saveCustomTextureToDisk(type: type, face: .bottom, image: image)
         }
         materialCache.removeAll()
         iconCache.removeAll()
@@ -177,8 +232,10 @@ enum BlockType: Int, CaseIterable, Identifiable, Codable {
     static func clearCustomTexture(for type: BlockType, face: BlockFace? = nil) {
         if let face = face {
             customBlockTextures[type]?.removeValue(forKey: face)
+            removeCustomTextureFromDisk(type: type, face: face)
         } else {
             customBlockTextures.removeValue(forKey: type)
+            removeCustomTextureFromDisk(type: type, face: nil)
         }
         materialCache.removeAll()
         iconCache.removeAll()
