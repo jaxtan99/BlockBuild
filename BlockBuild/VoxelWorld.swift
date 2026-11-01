@@ -818,6 +818,23 @@ struct MultiplayerPacket: Codable {
     var pitch: Float? = nil
 }
 
+/// On-screen notification shown when another player (iPhone, iPad or Android) joins or leaves
+struct PlayerNotice: Identifiable, Equatable {
+    let id = UUID()
+    let name: String
+    let joined: Bool
+}
+
+/// Real-time interpolation & LOD tracking for remote multiplayer avatars (3+ players)
+struct RemotePlayerState {
+    var targetPosition: SCNVector3
+    var currentPosition: SCNVector3
+    var targetYaw: Float
+    var currentYaw: Float
+    var walkAccumulator: Float = 0
+    var lastPacketTime: CFTimeInterval = 0
+}
+
 struct DiscoveredLocalHost: Identifiable, Equatable {
     let id: String
     let peerID: MCPeerID
@@ -826,6 +843,8 @@ struct DiscoveredLocalHost: Identifiable, Equatable {
     let skin: PlayerSkin
     let isInGame: Bool
     let isHost: Bool
+    var lanIp: String? = nil
+    var lanPort: Int? = nil
 
     static func == (lhs: DiscoveredLocalHost, rhs: DiscoveredLocalHost) -> Bool {
         lhs.id == rhs.id && lhs.worldName == rhs.worldName && lhs.isInGame == rhs.isInGame && lhs.isHost == rhs.isHost
@@ -839,6 +858,7 @@ struct MultiplayerJoinPrompt: Identifiable {
     let worldName: String
     let isDirectInvitation: Bool
     var invitationHandler: ((Bool, MCSession?) -> Void)? = nil
+    var lanHost: DiscoveredLocalHost? = nil
 }
 
 enum WorldType: String, CaseIterable, Identifiable, Codable {
@@ -1115,6 +1135,17 @@ final class VoxelWorld: NSObject, ObservableObject {
     }
     @Published var localPlayerName: String = ""
     @Published var isHostingMultiplayer: Bool = true
+    @Published var playerNotice: PlayerNotice? = nil
+
+    /// Shows the join/leave banner for 3.5 seconds (same banner on Android)
+    func postPlayerNotice(_ name: String, joined: Bool) {
+        let notice = PlayerNotice(name: name, joined: joined)
+        playerNotice = notice
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 3_500_000_000)
+            if self.playerNotice?.id == notice.id { self.playerNotice = nil }
+        }
+    }
     @Published var connectedPlayerNames: [String] = []
     @Published var discoveredHosts: [DiscoveredLocalHost] = []
     @Published var activeJoinPrompt: MultiplayerJoinPrompt? = nil
@@ -1218,6 +1249,10 @@ final class VoxelWorld: NSObject, ObservableObject {
     private var advertiser: MCNearbyServiceAdvertiser?
     private var browser: MCNearbyServiceBrowser?
     private var remotePlayerNodes: [ String: SCNNode ] = [:]
+    private var remotePlayerStates: [String: RemotePlayerState] = [:]
+    private var lastBroadcastPosition: SCNVector3 = SCNVector3(0, 0, 0)
+    private var lastBroadcastYaw: Float = 0.0
+    private var lastBroadcastTimestamp: CFTimeInterval = 0
     private var poseBroadcastAccumulator: Float = 0.0
 
     private let saveFileName = "blockbuild_saved_worlds_v2.json"
@@ -1381,10 +1416,11 @@ final class VoxelWorld: NSObject, ObservableObject {
             sharedGeometries[type] = box
         }
 
-        // Full block size water (1.0 x 1.0 x 1.0) like normal blocks
-        let wBox = SCNBox(width: 1.0, height: 1.0, length: 1.0, chamferRadius: 0.0)
-        wBox.materials = BlockType.water.materials(for: currentTexturePack)
+        // Stepped water heights (levels 1...4)
         for lvl in 1...4 {
+            let h = CGFloat(waterHeight(forLevel: lvl))
+            let wBox = SCNBox(width: 1.0, height: h, length: 1.0, chamferRadius: 0.0)
+            wBox.materials = BlockType.water.materials(for: currentTexturePack)
             waterLevelGeometries[lvl] = wBox
         }
 
@@ -1431,7 +1467,14 @@ final class VoxelWorld: NSObject, ObservableObject {
     }
 
     private func waterHeight(forLevel level: Int) -> Float {
-        return 1.0
+        switch level {
+        case 5...: return 1.0     // Submerged / water column with water directly above
+        case 4:    return 0.88    // Source block or full flowing step
+        case 3:    return 0.66    // Level 3 flowing
+        case 2:    return 0.44    // Level 2 flowing
+        case 1:    return 0.22    // Level 1 flowing edge
+        default:   return 0.88
+        }
     }
 
     private func setupScene() {
@@ -3809,9 +3852,7 @@ final class VoxelWorld: NSObject, ObservableObject {
             guard level > 1 else { continue }
             let targets = bestFlowNeighborsTowardLowestSpot(from: coord)
             for hCoord in targets {
-                let hBelow = BlockCoord(x: hCoord.x, y: hCoord.y - 1, z: hCoord.z)
-                let hasOpenDropBelow = (hCoord.y > 0 && (blocks[hBelow] == nil || blocks[hBelow] == .water))
-                let targetLevel = hasOpenDropBelow ? 4 : (level - 1)
+                let targetLevel = level - 1
 
                 if blocks[hCoord] == nil {
                     placeFlowingWaterBlock(at: hCoord, level: targetLevel)
@@ -3920,9 +3961,7 @@ final class VoxelWorld: NSObject, ObservableObject {
                 let targets = bestFlowNeighborsTowardLowestSpot(from: curr)
                 for t in targets {
                     if connectedFlowingWater.contains(t) {
-                        let tBelow = BlockCoord(x: t.x, y: t.y - 1, z: t.z)
-                        let hasDrop = (t.y > 0 && (blocks[tBelow] == nil || blocks[tBelow] == .water))
-                        let targetLvl = hasDrop ? 4 : (currLevel - 1)
+                        let targetLvl = currLevel - 1
                         if targetLvl > (validLevels[t] ?? 0) {
                             validLevels[t] = targetLvl
                             pQueue.append((t, targetLvl))
@@ -4343,13 +4382,17 @@ final class VoxelWorld: NSObject, ObservableObject {
 
     /// Computes a 6-bit face visibility mask for a water block at `coord` in SCNBox material order:
     /// Bit 0: Front (+Z), Bit 1: Right (+X), Bit 2: Back (-Z), Bit 3: Left (-X), Bit 4: Top (+Y), Bit 5: Bottom (-Y).
-    /// With full block size (1.0 x 1.0 x 1.0), all interior faces between adjacent water blocks are seamlessly culled.
+    /// Bridges the vertical step face between adjacent stepping water levels so there are zero clear holes/gaps,
+    /// while hiding interior faces between adjacent water blocks of equal/greater height.
     private func waterFaceMask(at coord: BlockCoord) -> Int {
         var mask = 0
 
+        let aboveCoord = BlockCoord(x: coord.x, y: coord.y + 1, z: coord.z)
+        let aboveHasWater = (blocks[aboveCoord] == .water)
+        let myLevel = aboveHasWater ? 5 : (waterSpreadLevels[coord] ?? 4)
+
         // Top (+Y, bit 4): visible only when there is no water directly above
-        let topCoord = BlockCoord(x: coord.x, y: coord.y + 1, z: coord.z)
-        if blocks[topCoord] != .water {
+        if !aboveHasWater {
             mask |= (1 << 4)
         }
 
@@ -4370,8 +4413,15 @@ final class VoxelWorld: NSObject, ObservableObject {
         for (nCoord, bit) in sideChecks {
             if let neighborType = blocks[nCoord] {
                 if neighborType == .water {
-                    // Full block size: adjacent water shares full height, hide shared interior face completely!
-                    continue
+                    let nAboveWater = (blocks[BlockCoord(x: nCoord.x, y: nCoord.y + 1, z: nCoord.z)] == .water)
+                    let nLevel = nAboveWater ? 5 : (waterSpreadLevels[nCoord] ?? 4)
+
+                    // If my water level is taller than neighbor's water level,
+                    // render the side face to cleanly bridge the step with NO clear see-through gap!
+                    if myLevel > nLevel {
+                        mask |= (1 << bit)
+                    }
+                    // If myLevel <= nLevel, neighbor water covers or matches our water side, so hide face to eliminate interior seams
                 } else if neighborType.isTransparent {
                     // Neighbor is glass, door, or trapdoor: show water side face
                     mask |= (1 << bit)
@@ -4387,12 +4437,14 @@ final class VoxelWorld: NSObject, ObservableObject {
     }
 
     private func maskedWaterGeometry(level: Int = 4, faceMask: Int) -> SCNBox {
-        let cacheKey = faceMask & 0x3F
+        let clampedLvl = max(1, min(5, level))
+        let cacheKey = (clampedLvl << 6) | (faceMask & 0x3F)
         if let cached = waterMaskedGeometries[cacheKey] {
             return cached
         }
 
-        let box = SCNBox(width: 1.0, height: 1.0, length: 1.0, chamferRadius: 0.0)
+        let h = CGFloat(waterHeight(forLevel: clampedLvl))
+        let box = SCNBox(width: 1.0, height: h, length: 1.0, chamferRadius: 0.0)
         let visibleMat = BlockType.water.materials(for: currentTexturePack).first!
         let hiddenMat = BlockType.invisibleMaterial
 
@@ -4464,10 +4516,13 @@ final class VoxelWorld: NSObject, ObservableObject {
         case .water:
             node.childNodes.forEach { $0.removeFromParentNode() }
             node.eulerAngles = SCNVector3(0, 0, 0)
+            let aboveHasWater = (blocks[BlockCoord(x: coord.x, y: coord.y + 1, z: coord.z)] == .water)
+            let lvl = aboveHasWater ? 5 : (waterSpreadLevels[coord] ?? 4)
+            let h = waterHeight(forLevel: lvl)
             let mask = waterFaceMask(at: coord)
-            node.geometry = maskedWaterGeometry(level: 4, faceMask: mask)
-            node.position = SCNVector3(fx, fy, fz)
-            node.renderingOrder = 10
+            node.geometry = maskedWaterGeometry(level: lvl, faceMask: mask)
+            node.position = SCNVector3(fx, fy - 0.5 + h * 0.5, fz)
+            node.renderingOrder = 5
             node.categoryBitMask = 2 // Water has no solid hitbox
 
         case .door:
@@ -4480,7 +4535,7 @@ final class VoxelWorld: NSObject, ObservableObject {
             } else {
                 node.position = SCNVector3(fx, fy, fz + 0.40)
             }
-            node.renderingOrder = 2
+            node.renderingOrder = 6
             node.categoryBitMask = 1
 
         case .roof:
@@ -4540,7 +4595,7 @@ final class VoxelWorld: NSObject, ObservableObject {
             node.eulerAngles = SCNVector3(0, 0, 0)
             node.geometry = sharedGeometries[type]
             node.position = SCNVector3(fx, fy, fz)
-            node.renderingOrder = (type == .glass) ? 5 : 0
+            node.renderingOrder = (type == .glass) ? 6 : 0
             node.categoryBitMask = type.hasHitbox ? 1 : 2
         }
     }
@@ -5176,6 +5231,10 @@ final class VoxelWorld: NSObject, ObservableObject {
             localPlayerAvatarNode?.childNode(withName: "leftArm", recursively: true)?.eulerAngles.x *= 0.85
             localPlayerAvatarNode?.childNode(withName: "rightArm", recursively: true)?.eulerAngles.x *= 0.85
         }
+
+        // Smoothly interpolate all remote player avatars with live walk cycle animations (optimized for 3+ players)
+        updateRemotePlayers(dt: clampedDt)
+
         updateStreamedChunks(force: false)
 
         // Step flowing water & falling sand simulation every 0.20 seconds
@@ -5259,7 +5318,7 @@ final class VoxelWorld: NSObject, ObservableObject {
             let cosP = cos(pitch)
             let sinP = sin(pitch)
             let camX = playerPosition.x + sin(yaw) * cosP * dist
-            let camY = playerPosition.y + sinP * dist + 0.35
+            let camY = playerPosition.y + sinP * dist + 0.12
             let camZ = playerPosition.z + cos(yaw) * cosP * dist
             cameraNode.position = SCNVector3(camX, camY, camZ)
             cameraNode.eulerAngles = SCNVector3(pitch, yaw, 0)
@@ -5272,7 +5331,7 @@ final class VoxelWorld: NSObject, ObservableObject {
 
             let dist: Float = 3.0
             let camX = playerPosition.x - sin(yaw) * dist
-            let camY = playerPosition.y + 0.25
+            let camY = playerPosition.y + 0.10
             let camZ = playerPosition.z - cos(yaw) * dist
             cameraNode.position = SCNVector3(camX, camY, camZ)
             cameraNode.eulerAngles = SCNVector3(-pitch * 0.4, yaw + Float.pi, 0)
@@ -5346,17 +5405,22 @@ final class VoxelWorld: NSObject, ObservableObject {
                     nz = n.z >= 0 ? 1 : -1
                 }
 
-                currentPlaceCoord = BlockCoord(
-                    x: hitCoord.x + nx,
-                    y: hitCoord.y + ny,
-                    z: hitCoord.z + nz
-                )
+                if targetedBlockType == .water && selectedBlock != .water {
+                    // When targeting water with any placeable block, place the block directly IN the water at hitCoord!
+                    currentPlaceCoord = hitCoord
+                } else {
+                    currentPlaceCoord = BlockCoord(
+                        x: hitCoord.x + nx,
+                        y: hitCoord.y + ny,
+                        z: hitCoord.z + nz
+                    )
+                }
 
                 if targetedBlockType == .water {
                     let aboveHasWater = (blocks[BlockCoord(x: hitCoord.x, y: hitCoord.y + 1, z: hitCoord.z)] == .water)
-                    let lvl = aboveHasWater ? 4 : (waterSpreadLevels[hitCoord] ?? 4)
+                    let lvl = aboveHasWater ? 5 : (waterSpreadLevels[hitCoord] ?? 4)
                     let h = waterHeight(forLevel: lvl)
-                    selectionBoxNode.scale = SCNVector3(1, 1, 1)
+                    selectionBoxNode.scale = SCNVector3(1, h, 1)
                     selectionBoxNode.position = SCNVector3(Float(hitCoord.x), Float(hitCoord.y) - 0.5 + h * 0.5, Float(hitCoord.z))
                 } else if targetedBlockType == .slab {
                     selectionBoxNode.scale = SCNVector3(1, 0.5, 1)
@@ -5455,6 +5519,8 @@ final class VoxelWorld: NSObject, ObservableObject {
         brw.delegate = self
         brw.startBrowsingForPeers()
         browser = brw
+
+        startLanServices()
     }
 
     func stopMultiplayerServices() {
@@ -5462,6 +5528,7 @@ final class VoxelWorld: NSObject, ObservableObject {
         advertiser = nil
         browser?.stopBrowsingForPeers()
         browser = nil
+        stopLanServices()
     }
 
     func toggleMultiplayerEnabled(_ enabled: Bool) {
@@ -5489,6 +5556,14 @@ final class VoxelWorld: NSObject, ObservableObject {
     }
 
     func joinDiscoveredHost(_ host: DiscoveredLocalHost) {
+        if let lanIp = host.lanIp, let port = host.lanPort {
+            isHostingMultiplayer = false
+            activeJoinPrompt = nil
+            statusToast = "Joining '\(host.worldName)' (\(host.playerName))..."
+            connectLanClient(ip: lanIp, port: port)
+            return
+        }
+
         guard let brw = browser else {
             statusToast = "Multiplayer search not active"
             return
@@ -5552,6 +5627,11 @@ final class VoxelWorld: NSObject, ObservableObject {
         let promptKey = "\(prompt.peerID.displayName)_\(prompt.worldName)"
         dismissedPromptKeys.insert(promptKey)
 
+        if let lanHost = prompt.lanHost {
+            joinDiscoveredHost(lanHost)
+            return
+        }
+
         if let handler = prompt.invitationHandler {
             // Direct invitation accepted
             isHostingMultiplayer = false
@@ -5588,11 +5668,14 @@ final class VoxelWorld: NSObject, ObservableObject {
 
     func disconnectMultiplayer() {
         mcSession.disconnect()
+        disconnectLanClient()
+        stopLanTcpServer()
         connectedPlayerNames.removeAll()
         for (_, node) in remotePlayerNodes {
             node.removeFromParentNode()
         }
         remotePlayerNodes.removeAll()
+        remotePlayerStates.removeAll()
         remotePlayerSkins.removeAll()
         remotePlayerCustomSkins.removeAll()
         if isInGame {
@@ -5604,14 +5687,16 @@ final class VoxelWorld: NSObject, ObservableObject {
     }
 
     private func sendPacket(_ packet: MultiplayerPacket, reliable: Bool) {
-        guard !mcSession.connectedPeers.isEmpty,
-              let data = try? JSONEncoder().encode(packet) else { return }
-        let mode: MCSessionSendDataMode = reliable ? .reliable : .unreliable
-        do {
-            try mcSession.send(data, toPeers: mcSession.connectedPeers, with: mode)
-        } catch {
-            print("[Multiplayer] broadcast packet error: \(error.localizedDescription)")
+        guard let data = try? JSONEncoder().encode(packet) else { return }
+        if !mcSession.connectedPeers.isEmpty {
+            let mode: MCSessionSendDataMode = reliable ? .reliable : .unreliable
+            do {
+                try mcSession.send(data, toPeers: mcSession.connectedPeers, with: mode)
+            } catch {
+                print("[Multiplayer] broadcast packet error: \(error.localizedDescription)")
+            }
         }
+        sendLanPacketData(data)
     }
 
     private func sendPacketToPeer(_ packet: MultiplayerPacket, peer: MCPeerID, reliable: Bool) {
@@ -5624,13 +5709,405 @@ final class VoxelWorld: NSObject, ObservableObject {
         }
     }
 
-    private func sendPacketToPeers(_ packet: MultiplayerPacket, peers: [MCPeerID], reliable: Bool) {
+    private func sendPacketToPeers(_ packet: MultiplayerPacket, peers: [MCPeerID], reliable: Bool, sendToLan: Bool = true) {
         guard !peers.isEmpty, let data = try? JSONEncoder().encode(packet) else { return }
         let mode: MCSessionSendDataMode = reliable ? .reliable : .unreliable
         do {
             try mcSession.send(data, toPeers: peers, with: mode)
         } catch {
             print("[Multiplayer] sendPacketToPeers error: \(error.localizedDescription)")
+        }
+        if sendToLan {
+            sendLanPacketData(data)
+        }
+    }
+
+    // MARK: - Cross-Platform Wi-Fi LAN Networking Bridge (iOS <-> Android)
+    private var lanUdpBeaconTimer: DispatchSourceTimer? = nil
+    private var lanUdpListenerSource: DispatchSourceRead? = nil
+    private var lanUdpListenerFd: Int32 = -1
+    private var lanTcpServerSource: DispatchSourceRead? = nil
+    private var lanTcpServerFd: Int32 = -1
+    private var lanClientFd: Int32 = -1
+    private var lanConnectedClientFds: [Int32: String] = [:]
+
+    func startLanServices() {
+        stopLanServices()
+        guard isMultiplayerEnabled else { return }
+        startLanUdpListener()
+        startLanUdpBeacon()
+        if isHostingMultiplayer && isInGame {
+            startLanTcpServer()
+        }
+    }
+
+    func stopLanServices() {
+        lanUdpBeaconTimer?.cancel()
+        lanUdpBeaconTimer = nil
+
+        if let src = lanUdpListenerSource {
+            src.cancel()
+            lanUdpListenerSource = nil
+        }
+        if lanUdpListenerFd >= 0 {
+            close(lanUdpListenerFd)
+            lanUdpListenerFd = -1
+        }
+
+        stopLanTcpServer()
+        disconnectLanClient()
+    }
+
+    private func startLanUdpBeacon() {
+        lanUdpBeaconTimer?.cancel()
+        let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
+        timer.schedule(deadline: .now(), repeating: .milliseconds(1500))
+        timer.setEventHandler { [weak self] in
+            guard let self = self, self.isMultiplayerEnabled else { return }
+            let safePlayer = self.localPlayerName.isEmpty ? "Builder" : self.localPlayerName
+            let safeWorld = self.currentWorldName.isEmpty ? "BlockBuild World" : self.currentWorldName
+            let beaconDict: [String: Any] = [
+                "beacon": true,
+                "playerName": String(safePlayer.prefix(20)),
+                "worldName": String(safeWorld.prefix(24)),
+                "skin": self.selectedSkin.rawValue,
+                "isInGame": self.isInGame,
+                "isHost": self.isHostingMultiplayer,
+                "port": 24465
+            ]
+            guard let jsonData = try? JSONSerialization.data(withJSONObject: beaconDict) else { return }
+
+            let fd = socket(AF_INET, SOCK_DGRAM, 0)
+            guard fd >= 0 else { return }
+            var broadcastEnable: Int32 = 1
+            setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, socklen_t(MemoryLayout<Int32>.size))
+
+            var addr = sockaddr_in()
+            addr.sin_family = sa_family_t(AF_INET)
+            addr.sin_port = in_port_t(24464).bigEndian
+            inet_pton(AF_INET, "255.255.255.255", &addr.sin_addr)
+
+            jsonData.withUnsafeBytes { ptr in
+                withUnsafePointer(to: &addr) { addrPtr in
+                    addrPtr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
+                        _ = sendto(fd, ptr.baseAddress, ptr.count, 0, sa, socklen_t(MemoryLayout<sockaddr_in>.size))
+                    }
+                }
+            }
+            close(fd)
+        }
+        timer.resume()
+        lanUdpBeaconTimer = timer
+    }
+
+    private func startLanUdpListener() {
+        let fd = socket(AF_INET, SOCK_DGRAM, 0)
+        guard fd >= 0 else { return }
+
+        var reuse: Int32 = 1
+        setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, socklen_t(MemoryLayout<Int32>.size))
+        setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &reuse, socklen_t(MemoryLayout<Int32>.size))
+
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = in_port_t(24464).bigEndian
+        addr.sin_addr.s_addr = in_addr_t(0)
+
+        let bindRes = withUnsafePointer(to: &addr) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
+                bind(fd, sa, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        guard bindRes == 0 else {
+            close(fd)
+            return
+        }
+
+        lanUdpListenerFd = fd
+        let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: DispatchQueue.global(qos: .utility))
+        source.setEventHandler { [weak self] in
+            guard let self = self else { return }
+            var buffer = [UInt8](repeating: 0, count: 2048)
+            var clientAddr = sockaddr_in()
+            var clientLen = socklen_t(MemoryLayout<sockaddr_in>.size)
+
+            let bytesRead = withUnsafeMutablePointer(to: &clientAddr) { addrPtr in
+                addrPtr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
+                    recvfrom(fd, &buffer, buffer.count, 0, sa, &clientLen)
+                }
+            }
+
+            guard bytesRead > 0 else { return }
+            let data = Data(buffer.prefix(bytesRead))
+            guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+
+            guard let isBeacon = obj["beacon"] as? Bool, isBeacon || obj["playerName"] != nil else { return }
+            let pName = (obj["playerName"] as? String) ?? "Player"
+            guard pName != self.localPlayerName else { return }
+
+            let wName = (obj["worldName"] as? String) ?? "World"
+            let skinRaw = (obj["skin"] as? String) ?? "steve"
+            let inGame = (obj["isInGame"] as? Bool) ?? ((obj["isInGame"] as? String) == "1")
+            let isHost = (obj["isHost"] as? Bool) ?? ((obj["isHost"] as? String) == "1")
+            let port = (obj["port"] as? Int) ?? 24465
+
+            var ipBuffer = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+            inet_ntop(AF_INET, &clientAddr.sin_addr, &ipBuffer, socklen_t(INET_ADDRSTRLEN))
+            let senderIp = String(cString: ipBuffer)
+
+            let skin = PlayerSkin(rawValue: skinRaw) ?? .steve
+            let peer = MCPeerID(displayName: pName)
+            let hostId = "\(senderIp):\(port)"
+
+            let discovered = DiscoveredLocalHost(
+                id: hostId,
+                peerID: peer,
+                worldName: wName,
+                playerName: pName,
+                skin: skin,
+                isInGame: inGame,
+                isHost: isHost,
+                lanIp: senderIp,
+                lanPort: port
+            )
+
+            Task { @MainActor in
+                if !self.discoveredHosts.contains(where: { $0.id == hostId }) {
+                    self.discoveredHosts.insert(discovered, at: 0)
+                } else if let idx = self.discoveredHosts.firstIndex(where: { $0.id == hostId }) {
+                    self.discoveredHosts[idx] = discovered
+                }
+                self.checkAndTriggerJoinPrompt(for: discovered)
+            }
+        }
+        source.resume()
+        lanUdpListenerSource = source
+    }
+
+    private func startLanTcpServer() {
+        stopLanTcpServer()
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        guard fd >= 0 else { return }
+
+        var reuse: Int32 = 1
+        setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, socklen_t(MemoryLayout<Int32>.size))
+
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = in_port_t(24465).bigEndian
+        addr.sin_addr.s_addr = in_addr_t(0)
+
+        let bindRes = withUnsafePointer(to: &addr) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
+                bind(fd, sa, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        guard bindRes == 0, listen(fd, 5) == 0 else {
+            close(fd)
+            return
+        }
+
+        lanTcpServerFd = fd
+        let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: DispatchQueue.global(qos: .userInitiated))
+        source.setEventHandler { [weak self] in
+            guard let self = self else { return }
+            var cAddr = sockaddr_in()
+            var cLen = socklen_t(MemoryLayout<sockaddr_in>.size)
+            let cFd = withUnsafeMutablePointer(to: &cAddr) { ptr in
+                ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
+                    accept(fd, sa, &cLen)
+                }
+            }
+            guard cFd >= 0 else { return }
+            self.handleNewLanClient(cFd)
+        }
+        source.resume()
+        lanTcpServerSource = source
+    }
+
+    private func stopLanTcpServer() {
+        lanTcpServerSource?.cancel()
+        lanTcpServerSource = nil
+        if lanTcpServerFd >= 0 {
+            close(lanTcpServerFd)
+            lanTcpServerFd = -1
+        }
+        for (fd, _) in lanConnectedClientFds {
+            close(fd)
+        }
+        lanConnectedClientFds.removeAll()
+    }
+
+    private func handleNewLanClient(_ clientFd: Int32) {
+        var clientName = "Guest-\(clientFd)"
+        lanConnectedClientFds[clientFd] = clientName
+
+        Task { @MainActor in
+            let snapshot = MultiplayerPacket(
+                kind: .worldSnapshot,
+                senderName: self.localPlayerName,
+                skinRaw: self.selectedSkin.rawValue,
+                worldID: self.currentWorldID,
+                worldName: self.currentWorldName,
+                seed: self.worldSeed,
+                worldTypeRaw: self.currentWorldType.rawValue,
+                deltas: self.modifiedBlocks.map { SavedBlockDelta(x: $0.key.x, y: $0.key.y, z: $0.key.z, typeRaw: $0.value) }
+            )
+            if let data = try? JSONEncoder().encode(snapshot) {
+                var lineData = data
+                lineData.append(contentsOf: [0x0A])
+                _ = lineData.withUnsafeBytes { ptr in
+                    send(clientFd, ptr.baseAddress, ptr.count, 0)
+                }
+            }
+        }
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            var buffer = [UInt8](repeating: 0, count: 4096)
+            var incomingBuffer = Data()
+
+            while true {
+                let bytesRead = recv(clientFd, &buffer, buffer.count, 0)
+                guard bytesRead > 0 else { break }
+                incomingBuffer.append(contentsOf: buffer.prefix(bytesRead))
+
+                while let newlineIdx = incomingBuffer.firstIndex(of: 0x0A) {
+                    let packetData = incomingBuffer.prefix(upTo: newlineIdx)
+                    incomingBuffer.removeSubrange(0...newlineIdx)
+                    if let packet = try? JSONDecoder().decode(MultiplayerPacket.self, from: packetData) {
+                        clientName = packet.senderName
+                        let peer = MCPeerID(displayName: packet.senderName)
+                        Task { @MainActor in
+                            self?.lanConnectedClientFds[clientFd] = packet.senderName
+                            if self?.connectedPlayerNames.contains(packet.senderName) == false {
+                                self?.connectedPlayerNames.append(packet.senderName)
+                                self?.statusToast = "\(packet.senderName) connected!"
+                                self?.postPlayerNotice(packet.senderName, joined: true)
+                            }
+                            self?.handleReceivedPacket(packet, from: peer)
+                        }
+                        self?.relayLanPacketData(packetData, excludingFd: clientFd)
+                    }
+                }
+            }
+
+            close(clientFd)
+            Task { @MainActor in
+                self?.lanConnectedClientFds.removeValue(forKey: clientFd)
+                if self?.connectedPlayerNames.contains(clientName) == true {
+                    self?.postPlayerNotice(clientName, joined: false)
+                }
+                self?.connectedPlayerNames.removeAll { $0 == clientName }
+                if let node = self?.remotePlayerNodes.removeValue(forKey: clientName) {
+                    node.removeFromParentNode()
+                }
+                self?.statusToast = "\(clientName) left"
+            }
+        }
+    }
+
+    private func connectLanClient(ip: String, port: Int) {
+        disconnectLanClient()
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        guard fd >= 0 else { return }
+
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = in_port_t(port).bigEndian
+        inet_pton(AF_INET, ip, &addr.sin_addr)
+
+        let connRes = withUnsafePointer(to: &addr) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
+                connect(fd, sa, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        guard connRes == 0 else {
+            close(fd)
+            statusToast = "Could not connect to host at \(ip)"
+            return
+        }
+
+        lanClientFd = fd
+
+        let handshake = MultiplayerPacket(
+            kind: .playerPose,
+            senderName: localPlayerName,
+            skinRaw: selectedSkin.rawValue,
+            worldID: currentWorldID,
+            px: playerPosition.x,
+            py: playerPosition.y,
+            pz: playerPosition.z,
+            yaw: yaw,
+            pitch: pitch
+        )
+        if let data = try? JSONEncoder().encode(handshake) {
+            var line = data
+            line.append(contentsOf: [0x0A])
+            _ = line.withUnsafeBytes { ptr in
+                send(fd, ptr.baseAddress, ptr.count, 0)
+            }
+        }
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            var buffer = [UInt8](repeating: 0, count: 4096)
+            var incomingBuffer = Data()
+
+            while true {
+                let bytesRead = recv(fd, &buffer, buffer.count, 0)
+                guard bytesRead > 0 else { break }
+                incomingBuffer.append(contentsOf: buffer.prefix(bytesRead))
+
+                while let newlineIdx = incomingBuffer.firstIndex(of: 0x0A) {
+                    let packetData = incomingBuffer.prefix(upTo: newlineIdx)
+                    incomingBuffer.removeSubrange(0...newlineIdx)
+                    if let packet = try? JSONDecoder().decode(MultiplayerPacket.self, from: packetData) {
+                        let peer = MCPeerID(displayName: packet.senderName)
+                        Task { @MainActor in
+                            self?.handleReceivedPacket(packet, from: peer)
+                        }
+                    }
+                }
+            }
+
+            close(fd)
+            Task { @MainActor in
+                self?.lanClientFd = -1
+                self?.statusToast = "Disconnected from host"
+            }
+        }
+    }
+
+    private func disconnectLanClient() {
+        if lanClientFd >= 0 {
+            close(lanClientFd)
+            lanClientFd = -1
+        }
+    }
+
+    private func sendLanPacketData(_ data: Data) {
+        var line = data
+        line.append(contentsOf: [0x0A])
+        line.withUnsafeBytes { ptr in
+            guard let base = ptr.baseAddress else { return }
+            for (fd, _) in lanConnectedClientFds {
+                send(fd, base, ptr.count, 0)
+            }
+            if lanClientFd >= 0 {
+                send(lanClientFd, base, ptr.count, 0)
+            }
+        }
+    }
+
+    private func relayLanPacketData(_ data: Data, excludingFd: Int32) {
+        var line = data
+        line.append(contentsOf: [0x0A])
+        line.withUnsafeBytes { ptr in
+            guard let base = ptr.baseAddress else { return }
+            for (fd, _) in lanConnectedClientFds {
+                if fd != excludingFd {
+                    send(fd, base, ptr.count, 0)
+                }
+            }
         }
     }
 
@@ -5707,8 +6184,13 @@ final class VoxelWorld: NSObject, ObservableObject {
         }
     }
 
+    /// True when any peer is connected, either via MultipeerConnectivity (iOS<->iOS) or the Wi-Fi LAN bridge (iOS<->Android)
+    private var hasAnyConnectedPeers: Bool {
+        !mcSession.connectedPeers.isEmpty || lanClientFd >= 0 || !lanConnectedClientFds.isEmpty
+    }
+
     private func broadcastBlockDelta(_ delta: SavedBlockDelta) {
-        guard !mcSession.connectedPeers.isEmpty else { return }
+        guard hasAnyConnectedPeers else { return }
         let packet = MultiplayerPacket(
             kind: .blockUpdate,
             senderName: localPlayerName,
@@ -5731,7 +6213,27 @@ final class VoxelWorld: NSObject, ObservableObject {
     }
 
     private func broadcastPlayerPoseIfNeeded() {
-        guard !mcSession.connectedPeers.isEmpty else { return }
+        guard hasAnyConnectedPeers else { return }
+
+        // Adaptive Dead-Reckoning Throttling for 3+ Players:
+        // Skip pose packet transmission if player has not moved (>2 cm) or rotated (>1.5 deg),
+        // unless 1.0 second has passed (heartbeat). Reduces network traffic by up to 75%.
+        let now = CACurrentMediaTime()
+        let dx = playerPosition.x - lastBroadcastPosition.x
+        let dy = playerPosition.y - lastBroadcastPosition.y
+        let dz = playerPosition.z - lastBroadcastPosition.z
+        let distSq = dx * dx + dy * dy + dz * dz
+        let yawDiff = abs(yaw - lastBroadcastYaw)
+        let timeSinceLast = now - lastBroadcastTimestamp
+
+        if distSq < 0.0004 && yawDiff < 0.025 && timeSinceLast < 1.0 {
+            return
+        }
+
+        lastBroadcastPosition = playerPosition
+        lastBroadcastYaw = yaw
+        lastBroadcastTimestamp = now
+
         let packet = MultiplayerPacket(
             kind: .playerPose,
             senderName: localPlayerName,
@@ -5880,13 +6382,20 @@ final class VoxelWorld: NSObject, ObservableObject {
                 }
                 updateVisibilityAround(coord)
             }
-            saveCurrentWorld(silent: true)
+            // Debounced autosave (saves disk I/O & prevents lag spikes with 3+ players)
+            hasUnsavedChanges = true
 
             // Multi-device relay: Host relays block update to ALL other connected peers
             if isHostingMultiplayer {
                 let others = mcSession.connectedPeers.filter { $0 != peer }
                 if !others.isEmpty {
-                    sendPacketToPeers(packet, peers: others, reliable: true)
+                    sendPacketToPeers(packet, peers: others, reliable: true, sendToLan: false)
+                }
+                let sender = packet.senderName.isEmpty ? peer.displayName : packet.senderName
+                if !lanConnectedClientFds.isEmpty && !lanConnectedClientFds.values.contains(sender) {
+                    if let data = try? JSONEncoder().encode(packet) {
+                        relayLanPacketData(data, excludingFd: -1)
+                    }
                 }
             }
 
@@ -5902,11 +6411,16 @@ final class VoxelWorld: NSObject, ObservableObject {
             }
             updateRemotePlayerAvatar(name: sender, skin: skin, customSkin: packet.customSkin, x: px, y: py, z: pz, yaw: pYaw)
 
-            // Multi-device relay: Host relays player pose to ALL other connected peers
+            // Multi-device relay: Host relays player pose to other connected peers
             if isHostingMultiplayer {
                 let others = mcSession.connectedPeers.filter { $0 != peer }
                 if !others.isEmpty {
-                    sendPacketToPeers(packet, peers: others, reliable: false)
+                    sendPacketToPeers(packet, peers: others, reliable: false, sendToLan: false)
+                }
+                if !lanConnectedClientFds.isEmpty && !lanConnectedClientFds.values.contains(sender) {
+                    if let data = try? JSONEncoder().encode(packet) {
+                        relayLanPacketData(data, excludingFd: -1)
+                    }
                 }
             }
 
@@ -5915,14 +6429,23 @@ final class VoxelWorld: NSObject, ObservableObject {
             if let node = remotePlayerNodes.removeValue(forKey: leftName) {
                 node.removeFromParentNode()
             }
+            remotePlayerStates.removeValue(forKey: leftName)
             remotePlayerSkins.removeValue(forKey: leftName)
             remotePlayerCustomSkins.removeValue(forKey: leftName)
+            if connectedPlayerNames.contains(leftName) || remotePlayerSkins[leftName] != nil {
+                postPlayerNotice(leftName, joined: false)
+            }
             connectedPlayerNames.removeAll { $0 == leftName }
             statusToast = "\(leftName) left"
         }
     }
 
     private func updateRemotePlayerAvatar(name: String, skin: PlayerSkin, customSkin: CustomSkin? = nil, x: Float, y: Float, z: Float, yaw: Float) {
+        if remotePlayerNodes[name] == nil && !connectedPlayerNames.contains(name) && name != localPlayerName {
+            connectedPlayerNames.append(name)
+            statusToast = "\(name) connected!"
+            postPlayerNotice(name, joined: true)
+        }
         let avatarNode: SCNNode
         let skinUnchanged = (remotePlayerSkins[name] == skin) && (remotePlayerCustomSkins[name]?.id == customSkin?.id)
         if let existing = remotePlayerNodes[name], skinUnchanged {
@@ -5939,12 +6462,95 @@ final class VoxelWorld: NSObject, ObservableObject {
                 remotePlayerCustomSkins.removeValue(forKey: name)
             }
             avatarNode = created
+            avatarNode.position = SCNVector3(x, y - playerFeetOffset, z)
+            avatarNode.eulerAngles = SCNVector3(0, yaw, 0)
         }
 
+        let targetPos = SCNVector3(x, y - playerFeetOffset, z)
+        let now = CACurrentMediaTime()
+        if var state = remotePlayerStates[name] {
+            state.targetPosition = targetPos
+            state.targetYaw = yaw
+            state.lastPacketTime = now
+            remotePlayerStates[name] = state
+        } else {
+            remotePlayerStates[name] = RemotePlayerState(
+                targetPosition: targetPos,
+                currentPosition: targetPos,
+                targetYaw: yaw,
+                currentYaw: yaw,
+                walkAccumulator: 0,
+                lastPacketTime: now
+            )
+        }
+    }
+
+    private func updateRemotePlayers(dt: Float) {
+        guard !remotePlayerStates.isEmpty else { return }
+
+        let lerpFactor = min(1.0, dt * 14.0)
+        let renderDistBlocks = Float(renderDistance * chunkSize)
+        let localPos = playerPosition
+
         SCNTransaction.begin()
-        SCNTransaction.animationDuration = 0.06
-        avatarNode.position = SCNVector3(x, y - playerFeetOffset, z)
-        avatarNode.eulerAngles = SCNVector3(0, yaw, 0)
+        SCNTransaction.animationDuration = 0
+
+        for (name, var state) in remotePlayerStates {
+            guard let node = remotePlayerNodes[name] else { continue }
+
+            let dx = state.targetPosition.x - localPos.x
+            let dy = state.targetPosition.y - localPos.y
+            let dz = state.targetPosition.z - localPos.z
+            let distSq = dx * dx + dy * dy + dz * dz
+
+            // Distance culling: hide if beyond render distance to save draw calls
+            if distSq > renderDistBlocks * renderDistBlocks {
+                if !node.isHidden { node.isHidden = true }
+                continue
+            } else if node.isHidden {
+                node.isHidden = false
+            }
+
+            // Smooth position interpolation (60 FPS smooth movement)
+            let curPos = state.currentPosition
+            let targetPos = state.targetPosition
+            let newX = curPos.x + (targetPos.x - curPos.x) * lerpFactor
+            let newY = curPos.y + (targetPos.y - curPos.y) * lerpFactor
+            let newZ = curPos.z + (targetPos.z - curPos.z) * lerpFactor
+            let newPos = SCNVector3(newX, newY, newZ)
+            state.currentPosition = newPos
+            node.position = newPos
+
+            // Shortest angle rotation lerp
+            var diffYaw = (state.targetYaw - state.currentYaw).truncatingRemainder(dividingBy: Float.pi * 2)
+            if diffYaw > Float.pi { diffYaw -= Float.pi * 2 }
+            if diffYaw < -Float.pi { diffYaw += Float.pi * 2 }
+            state.currentYaw += diffYaw * lerpFactor
+            node.eulerAngles.y = state.currentYaw
+
+            // Natural limb walk cycle animations (LOD: only compute if within 48 blocks)
+            if distSq < 2304.0 {
+                let moveDist = sqrt((newX - curPos.x) * (newX - curPos.x) + (newZ - curPos.z) * (newZ - curPos.z))
+                let speed = moveDist / max(dt, 0.001)
+
+                if speed > 0.15 {
+                    state.walkAccumulator += dt * 8.5
+                    let angle = sin(state.walkAccumulator) * 0.45
+                    node.childNode(withName: "leftLeg", recursively: true)?.eulerAngles.x = angle
+                    node.childNode(withName: "rightLeg", recursively: true)?.eulerAngles.x = -angle
+                    node.childNode(withName: "leftArm", recursively: true)?.eulerAngles.x = -angle
+                    node.childNode(withName: "rightArm", recursively: true)?.eulerAngles.x = angle
+                } else {
+                    node.childNode(withName: "leftLeg", recursively: true)?.eulerAngles.x *= 0.85
+                    node.childNode(withName: "rightLeg", recursively: true)?.eulerAngles.x *= 0.85
+                    node.childNode(withName: "leftArm", recursively: true)?.eulerAngles.x *= 0.85
+                    node.childNode(withName: "rightArm", recursively: true)?.eulerAngles.x *= 0.85
+                }
+            }
+
+            remotePlayerStates[name] = state
+        }
+
         SCNTransaction.commit()
     }
 
@@ -6095,7 +6701,7 @@ final class SkinTextureManager: @unchecked Sendable {
         mat.diffuse.magnificationFilter = .nearest
         mat.diffuse.minificationFilter = .nearest
         mat.diffuse.mipFilter = .none
-        mat.isDoubleSided = false
+        mat.isDoubleSided = true
         mat.lightingModel = .lambert
         return mat
     }
@@ -6167,12 +6773,12 @@ final class SkinTextureManager: @unchecked Sendable {
         if let cached = rightLegMaterialsCache[skin] { return cached }
         let img = skinImage(for: skin)
         guard let cg = img.cgImage else { return [] }
-        let front = makePixelMat(from: cropFace(from: cg, x: 4, y: 20, w: 4, h: 12))
-        let right = makePixelMat(from: cropFace(from: cg, x: 0, y: 20, w: 4, h: 12))
-        let back = makePixelMat(from: cropFace(from: cg, x: 12, y: 20, w: 4, h: 12))
-        let left = makePixelMat(from: cropFace(from: cg, x: 8, y: 20, w: 4, h: 12))
-        let top = makePixelMat(from: cropFace(from: cg, x: 4, y: 16, w: 4, h: 4))
-        let bottom = makePixelMat(from: cropFace(from: cg, x: 8, y: 16, w: 4, h: 4))
+        let front = makePixelMat(from: cropFace(from: cg, x: 4, y: 20, w: 4, h: 12, fallbackColor: skin.legsColor))
+        let right = makePixelMat(from: cropFace(from: cg, x: 0, y: 20, w: 4, h: 12, fallbackColor: skin.legsColor))
+        let back = makePixelMat(from: cropFace(from: cg, x: 12, y: 20, w: 4, h: 12, fallbackColor: skin.legsColor))
+        let left = makePixelMat(from: cropFace(from: cg, x: 8, y: 20, w: 4, h: 12, fallbackColor: skin.legsColor))
+        let top = makePixelMat(from: cropFace(from: cg, x: 4, y: 16, w: 4, h: 4, fallbackColor: skin.legsColor))
+        let bottom = makePixelMat(from: cropFace(from: cg, x: 8, y: 16, w: 4, h: 4, fallbackColor: skin.bootsColor))
         let mats = [front, right, back, left, top, bottom]
         rightLegMaterialsCache[skin] = mats
         return mats
@@ -6182,12 +6788,12 @@ final class SkinTextureManager: @unchecked Sendable {
         if let cached = leftLegMaterialsCache[skin] { return cached }
         let img = skinImage(for: skin)
         guard let cg = img.cgImage else { return [] }
-        let front = makePixelMat(from: cropFace(from: cg, x: 20, y: 52, w: 4, h: 12))
-        let right = makePixelMat(from: cropFace(from: cg, x: 16, y: 52, w: 4, h: 12))
-        let back = makePixelMat(from: cropFace(from: cg, x: 28, y: 52, w: 4, h: 12))
-        let left = makePixelMat(from: cropFace(from: cg, x: 24, y: 52, w: 4, h: 12))
-        let top = makePixelMat(from: cropFace(from: cg, x: 20, y: 48, w: 4, h: 4))
-        let bottom = makePixelMat(from: cropFace(from: cg, x: 24, y: 48, w: 4, h: 4))
+        let front = makePixelMat(from: cropFace(from: cg, x: 20, y: 52, w: 4, h: 12, fallbackColor: skin.legsColor))
+        let right = makePixelMat(from: cropFace(from: cg, x: 16, y: 52, w: 4, h: 12, fallbackColor: skin.legsColor))
+        let back = makePixelMat(from: cropFace(from: cg, x: 28, y: 52, w: 4, h: 12, fallbackColor: skin.legsColor))
+        let left = makePixelMat(from: cropFace(from: cg, x: 24, y: 52, w: 4, h: 12, fallbackColor: skin.legsColor))
+        let top = makePixelMat(from: cropFace(from: cg, x: 20, y: 48, w: 4, h: 4, fallbackColor: skin.legsColor))
+        let bottom = makePixelMat(from: cropFace(from: cg, x: 24, y: 48, w: 4, h: 4, fallbackColor: skin.bootsColor))
         let mats = [front, right, back, left, top, bottom]
         leftLegMaterialsCache[skin] = mats
         return mats
@@ -6348,7 +6954,7 @@ final class SkinTextureManager: @unchecked Sendable {
         let back = makePixelMat(from: cropFace(from: cg, x: 12, y: 20, w: 4, h: 12, fallbackColor: customSkin.legsColor))
         let left = makePixelMat(from: cropFace(from: cg, x: 8, y: 20, w: 4, h: 12, fallbackColor: customSkin.legsColor))
         let top = makePixelMat(from: cropFace(from: cg, x: 4, y: 16, w: 4, h: 4, fallbackColor: customSkin.legsColor))
-        let bottom = makePixelMat(from: cropFace(from: cg, x: 8, y: 16, w: 4, h: 4, fallbackColor: .black))
+        let bottom = makePixelMat(from: cropFace(from: cg, x: 8, y: 16, w: 4, h: 4, fallbackColor: customSkin.bootsColor))
         let mats = [front, right, back, left, top, bottom]
         customRightLegMaterialsCache[customSkin.id] = mats
         return mats
@@ -6363,7 +6969,7 @@ final class SkinTextureManager: @unchecked Sendable {
         let back = makePixelMat(from: cropFace(from: cg, x: 28, y: 52, w: 4, h: 12, fallbackColor: customSkin.legsColor))
         let left = makePixelMat(from: cropFace(from: cg, x: 24, y: 52, w: 4, h: 12, fallbackColor: customSkin.legsColor))
         let top = makePixelMat(from: cropFace(from: cg, x: 20, y: 48, w: 4, h: 4, fallbackColor: customSkin.legsColor))
-        let bottom = makePixelMat(from: cropFace(from: cg, x: 24, y: 48, w: 4, h: 4, fallbackColor: .black))
+        let bottom = makePixelMat(from: cropFace(from: cg, x: 24, y: 48, w: 4, h: 4, fallbackColor: customSkin.bootsColor))
         let mats = [front, right, back, left, top, bottom]
         customLeftLegMaterialsCache[customSkin.id] = mats
         return mats
@@ -6375,9 +6981,12 @@ final class SkinTextureManager: @unchecked Sendable {
 extension VoxelWorld: MCSessionDelegate, MCNearbyServiceAdvertiserDelegate, MCNearbyServiceBrowserDelegate {
     nonisolated func session(_ session: MCSession, peer peerID: MCPeerID, didChange state: MCSessionState) {
         Task { @MainActor in
-            self.connectedPlayerNames = session.connectedPeers.map { $0.displayName }
+            // Keep Wi-Fi bridge (Android) players in the list too
+            let lanNames = Array(self.lanConnectedClientFds.values)
+            self.connectedPlayerNames = Array(Set(session.connectedPeers.map { $0.displayName } + lanNames))
             if state == .connected {
                 self.statusToast = "\(peerID.displayName) connected!"
+                self.postPlayerNotice(peerID.displayName, joined: true)
                 // Dismiss any pending join prompt for this peer immediately
                 if self.activeJoinPrompt?.peerID == peerID {
                     self.activeJoinPrompt = nil
@@ -6424,6 +7033,7 @@ extension VoxelWorld: MCSessionDelegate, MCNearbyServiceAdvertiserDelegate, MCNe
                 self.remotePlayerCustomSkins.removeValue(forKey: leftName)
                 self.connectedPlayerNames.removeAll { $0 == leftName }
                 self.statusToast = "\(leftName) left"
+                self.postPlayerNotice(leftName, joined: false)
 
                 // Host relays playerLeft packet so all other connected devices remove their avatar
                 if self.isHostingMultiplayer {

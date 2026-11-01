@@ -35,6 +35,13 @@ struct ContentView: View {
                 inGameWorldView
             }
 
+            // Player joined / left notification (identical banner on Android)
+            if let notice = world.playerNotice {
+                playerNoticeBanner(notice)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .zIndex(1000)
+            }
+
             // Top interactive pop-up banner when nearby signal is detected or invitation received
             if let prompt = world.activeJoinPrompt {
                 multiplayerJoinBanner(prompt)
@@ -139,6 +146,43 @@ struct ContentView: View {
         }
     }
 
+    private func playerNoticeBanner(_ notice: PlayerNotice) -> some View {
+        let accent: Color = notice.joined ? .green : .orange
+        return VStack {
+            HStack(spacing: 10) {
+                ZStack {
+                    Circle()
+                        .fill(accent.opacity(0.25))
+                        .frame(width: 30, height: 30)
+                    Image(systemName: notice.joined ? "person.wave.2.fill" : "person.fill.xmark")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(accent)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(notice.joined ? "PLAYER JOINED" : "PLAYER LEFT")
+                        .font(.system(size: 10, weight: .black, design: .monospaced))
+                        .foregroundColor(accent)
+                    Text(notice.joined ? "\(notice.name) joined the world!" : "\(notice.name) left the world")
+                        .font(.system(size: 12, weight: .bold, design: .monospaced))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.black.opacity(0.88))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(accent.opacity(0.8), lineWidth: 1.5))
+                    .shadow(color: .black.opacity(0.6), radius: 8, y: 4)
+            )
+            .padding(.top, 58)
+            Spacer()
+        }
+        .allowsHitTesting(false)
+        .animation(.spring(response: 0.35), value: notice.id)
+    }
+
     private func multiplayerJoinBanner(_ prompt: MultiplayerJoinPrompt) -> some View {
         VStack {
             HStack(spacing: 12) {
@@ -238,8 +282,13 @@ struct ContentView: View {
                     HStack(spacing: 4) {
                         Text(target.fullName)
                         if target == .water {
-                            Text("(BREAK TO SCOOP)")
-                                .foregroundColor(.cyan)
+                            if world.selectedBlock == .water {
+                                Text("(BREAK TO SCOOP)")
+                                    .foregroundColor(.cyan)
+                            } else {
+                                Text("(PLACE TO FILL)")
+                                    .foregroundColor(.cyan)
+                            }
                         } else if target.isToggleable {
                             Text(world.isTargetedBlockOpen ? "(OPEN)" : "(CLOSED)")
                                 .foregroundColor(.yellow)

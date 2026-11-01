@@ -22,6 +22,17 @@ DerivedData/
 # Thumbnails
 ._*
 
+# Android & Gradle
+.gradle/
+build/
+android/app/build/
+android/.gradle/
+*.apk
+*.aab
+.idea/
+*.iml
+local.properties
+
 # Files that might appear in the root of a Volume
 .DocumentRevisions-V100
 .fseventsd
@@ -30,3 +41,5 @@ DerivedData/
 .Trashes
 .VolumeIcon.icns
 .com.apple.timemachine.donotpresent
+
+.port-baseline/

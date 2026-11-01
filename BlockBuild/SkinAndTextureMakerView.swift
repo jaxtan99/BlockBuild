@@ -161,9 +161,9 @@ enum SkinEditablePart: String, CaseIterable, Identifiable, CustomStringConvertib
         case .rightLegInner, .leftLegInner:
             return "Inner Side"
         case .rightLegTop, .leftLegTop:
-            return "Top/Hip"
+            return "Top (Hip)"
         case .rightLegBottom, .leftLegBottom:
-            return "Foot/Sole"
+            return "Bottom (Foot/Sole)"
         }
     }
 
@@ -1207,7 +1207,13 @@ struct SkinAndTextureMakerView: View {
             let r = part.uvRect
             for y in r.y..<(r.y + r.h) {
                 for x in r.x..<(r.x + r.w) {
-                    newGrid[y][x] = (part == .headFront || part == .headBack || part == .headRight || part == .headLeft) ? baseColor : UIColor.darkGray
+                    if part == .headFront || part == .headBack || part == .headRight || part == .headLeft {
+                        newGrid[y][x] = baseColor
+                    } else if part == .rightLegBottom || part == .leftLegBottom {
+                        newGrid[y][x] = UIColor(red: 0.25, green: 0.25, blue: 0.28, alpha: 1.0)
+                    } else {
+                        newGrid[y][x] = UIColor.darkGray
+                    }
                 }
             }
         }
@@ -1452,13 +1458,13 @@ struct Character3DModelPreviewView: UIViewRepresentable {
         scnView.antialiasingMode = .multisampling4X
         scnView.autoenablesDefaultLighting = false
 
-        // Camera
+        // Camera positioned to frame entire character from head to feet
         let cameraNode = SCNNode()
         let camera = SCNCamera()
         camera.zNear = 0.1
         camera.zFar = 20.0
         cameraNode.camera = camera
-        cameraNode.position = SCNVector3(0, 1.15, 3.2)
+        cameraNode.position = SCNVector3(0, 0.90, 3.35)
         scene.rootNode.addChildNode(cameraNode)
 
         // Lighting: Ambient + Key Directional

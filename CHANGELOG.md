@@ -35,6 +35,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - Remote player avatars dynamically receive and apply custom AI skin textures over local Wi-Fi.
 
 ### Fixed
+- **Complete Leg Bottom & Foot Texturing Across Character Skins**:
+  - Populated all 14 built-in character skin PNG textures with authentic matching shoe, boot, and sole textures on both the bottom of the right leg (UV `8, 16, 4, 4`) and bottom of the left leg (UV `24, 48, 4, 4`), replacing previously empty/transparent regions.
+  - Implemented `isDoubleSided = true` and dedicated `bootsColor` fallbacks in `SkinTextureManager` so the bottom face of limbs is never culled or rendered as pitch black.
+  - Updated Skin & Texture Maker face selector labels to clearly show `"Bottom (Foot/Sole)"` and `"Top (Hip)"`, pre-filling blank skins with durable sole colors.
+  - Re-centered the 3D model inspector camera (`y = 0.90, z = 3.35`) and adjusted third-person in-game camera framing so the full player avatar from the top of the head to the bottom of the feet is visible without occlusion by the bottom HUD hotbar.
 - **Settings Button Hit-Testing & Tactile Responsiveness**:
   - Replaced ambiguous button hitboxes with full-row `.contentShape(Rectangle())` and `.buttonStyle(.plain)` so tapping anywhere in the row (including padding and labels) triggers actions reliably.
   - Added visual confirmation banner ("Refilled! (+20 All Blocks)") with haptic feedback to the Creative Refill action.

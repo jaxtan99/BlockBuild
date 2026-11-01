@@ -199,6 +199,12 @@ struct CustomSkin: Identifiable, Codable, Equatable {
     var eyeColor: UIColor { UIColor(hex: eyeColorHex) ?? .cyan }
     var hairColor: UIColor { UIColor(hex: hairColorHex) ?? .black }
 
+    var bootsColor: UIColor {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        legsColor.getRed(&r, green: &g, blue: &b, alpha: &a)
+        return UIColor(red: max(0, r * 0.65), green: max(0, g * 0.65), blue: max(0, b * 0.65), alpha: 1.0)
+    }
+
     var featureStyle: SkinFeatureStyle {
         SkinFeatureStyle(rawValue: featureStyleRaw) ?? .classic
     }

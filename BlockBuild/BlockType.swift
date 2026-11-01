@@ -299,13 +299,13 @@ enum BlockType: Int, CaseIterable, Identifiable, Codable {
             // Constant shading + no depth-buffer occlusion eliminates reflection glare and Z-fighting between adjacent water blocks
             mat.lightingModel = .constant
             mat.transparency = 0.74
-            mat.isDoubleSided = false
+            mat.isDoubleSided = true
             mat.writesToDepthBuffer = false
             mat.transparencyMode = .aOne
         case .glass:
             mat.lightingModel = .lambert
             mat.isDoubleSided = false
-            mat.writesToDepthBuffer = true
+            mat.writesToDepthBuffer = false
             mat.transparencyMode = .aOne
         case .door:
             mat.lightingModel = .lambert
