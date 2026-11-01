@@ -825,9 +825,10 @@ struct DiscoveredLocalHost: Identifiable, Equatable {
     let playerName: String
     let skin: PlayerSkin
     let isInGame: Bool
+    let isHost: Bool
 
     static func == (lhs: DiscoveredLocalHost, rhs: DiscoveredLocalHost) -> Bool {
-        lhs.id == rhs.id && lhs.worldName == rhs.worldName && lhs.isInGame == rhs.isInGame
+        lhs.id == rhs.id && lhs.worldName == rhs.worldName && lhs.isInGame == rhs.isInGame && lhs.isHost == rhs.isHost
     }
 }
 
@@ -1687,7 +1688,7 @@ final class VoxelWorld: NSObject, ObservableObject {
     }
 
     func saveCustomWorldType(_ type: CustomWorldType) {
-        if let idx = customWorldTypes.firstIndex(where: { $0.id == type.id }) {
+        if let idx = customWorldTypes.firstIndex(where: { $0.id == type.id || $0.name.lowercased() == type.name.lowercased() }) {
             customWorldTypes[idx] = type
         } else {
             customWorldTypes.insert(type, at: 0)
@@ -1764,6 +1765,7 @@ final class VoxelWorld: NSObject, ObservableObject {
 
     func regenerateWithCustomWorld(_ custom: CustomWorldType, customName: String? = nil) {
         saveCurrentWorld(silent: true)
+        isHostingMultiplayer = true
         activeCustomWorld = custom
         let newSeed = Int.random(in: 1000...999_999)
         startNewWorld(seed: newSeed, type: custom.baseWorldType, customName: customName ?? custom.name)
@@ -1838,6 +1840,7 @@ final class VoxelWorld: NSObject, ObservableObject {
     func regenerateNewWorld(type: WorldType = .standard, customName: String? = nil) {
         // Save the current world before generating a new one so no progress is lost
         saveCurrentWorld(silent: true)
+        isHostingMultiplayer = true
         activeCustomWorld = nil
         let newSeed = Int.random(in: 1000...999_999)
         startNewWorld(seed: newSeed, type: type, customName: customName)
@@ -4163,6 +4166,7 @@ final class VoxelWorld: NSObject, ObservableObject {
 
     func loadSavedWorld(_ saved: SavedWorld, enterGame: Bool = true) {
         clearAllWorldState()
+        isHostingMultiplayer = true
 
         currentWorldID = saved.id
         currentWorldName = Self.cleanWorldName(saved.name, seed: saved.seed)
@@ -4334,6 +4338,7 @@ final class VoxelWorld: NSObject, ObservableObject {
         activeWaterFrontier.removeAll()
         activeSandBlocks.removeAll()
         lastPlayerChunk = nil
+        blocksRootNode.childNodes.forEach { $0.removeFromParentNode() }
     }
 
     /// Computes a 6-bit face visibility mask for a water block at `coord` in SCNBox material order:
@@ -5484,39 +5489,62 @@ final class VoxelWorld: NSObject, ObservableObject {
     }
 
     func joinDiscoveredHost(_ host: DiscoveredLocalHost) {
-        guard let brw = browser else { return }
-        isHostingMultiplayer = false
-        // Re-advertise as guest
-        startMultiplayerServices()
-        mcSession.disconnect()
-
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 120_000_000)
-            brw.invitePeer(host.peerID, to: self.mcSession, withContext: nil, timeout: 30)
-            self.statusToast = "Joining '\(host.worldName)' (\(host.playerName))..."
+        guard let brw = browser else {
+            statusToast = "Multiplayer search not active"
+            return
         }
+        isHostingMultiplayer = false
+        activeJoinPrompt = nil
+
+        // Re-advertise as guest without resetting or destroying browser
+        let safePlayerName = localPlayerName.isEmpty ? "Builder" : localPlayerName
+        let safeWorldName = currentWorldName.isEmpty ? "BlockBuild World" : currentWorldName
+        let discoveryInfo: [String: String] = [
+            "playerName": String(safePlayerName.prefix(20)),
+            "worldName": String(safeWorldName.prefix(24)),
+            "skin": selectedSkin.rawValue,
+            "isInGame": isInGame ? "1" : "0",
+            "isHost": "0"
+        ]
+        advertiser?.stopAdvertisingPeer()
+        let adv = MCNearbyServiceAdvertiser(peer: peerID, discoveryInfo: discoveryInfo, serviceType: serviceType)
+        adv.delegate = self
+        adv.startAdvertisingPeer()
+        advertiser = adv
+
+        // Cleanly disconnect old connections so a fresh connection can establish
+        if !mcSession.connectedPeers.isEmpty {
+            mcSession.disconnect()
+            let newSession = MCSession(peer: peerID, securityIdentity: nil, encryptionPreference: .none)
+            newSession.delegate = self
+            mcSession = newSession
+        }
+
+        statusToast = "Joining '\(host.worldName)' (\(host.playerName))..."
+        brw.invitePeer(host.peerID, to: mcSession, withContext: nil, timeout: 30)
     }
 
     func checkAndTriggerJoinPrompt(for host: DiscoveredLocalHost) {
         guard isMultiplayerEnabled else { return }
-        // Don't pop up if we are already connected to them
+        // 1. If WE are already in-game and hosting our own world, NEVER pop up join prompts to leave!
+        guard !(isHostingMultiplayer && isInGame) else { return }
+        // 2. Only show prompt if the discovered peer is ACTUALLY a host actively playing in a world!
+        guard host.isHost && host.isInGame else { return }
+        // 3. Don't pop up if we are already connected to them
         guard !connectedPlayerNames.contains(host.playerName) && !connectedPlayerNames.contains(host.id) else { return }
-        // Don't override an existing prompt
+        // 4. Don't override an existing prompt
         guard activeJoinPrompt == nil else { return }
-        // Don't show if user dismissed prompt for this peer/world
+        // 5. Don't show if user dismissed prompt for this peer/world
         let promptKey = "\(host.id)_\(host.worldName)"
         guard !dismissedPromptKeys.contains(promptKey) else { return }
 
-        // If the other player is in-game, pop up asking if the user wants to join their world!
-        if host.isInGame {
-            self.activeJoinPrompt = MultiplayerJoinPrompt(
-                peerID: host.peerID,
-                playerName: host.playerName,
-                worldName: host.worldName,
-                isDirectInvitation: false,
-                invitationHandler: nil
-            )
-        }
+        self.activeJoinPrompt = MultiplayerJoinPrompt(
+            peerID: host.peerID,
+            playerName: host.playerName,
+            worldName: host.worldName,
+            isDirectInvitation: false,
+            invitationHandler: nil
+        )
     }
 
     func acceptActiveJoinPrompt(_ prompt: MultiplayerJoinPrompt) {
@@ -5540,7 +5568,8 @@ final class VoxelWorld: NSObject, ObservableObject {
                     worldName: prompt.worldName,
                     playerName: prompt.playerName,
                     skin: .steve,
-                    isInGame: true
+                    isInGame: true,
+                    isHost: true
                 )
                 joinDiscoveredHost(tempHost)
             }
@@ -5612,6 +5641,8 @@ final class VoxelWorld: NSObject, ObservableObject {
     }
 
     private func sendWorldSnapshot(to peer: MCPeerID) {
+        guard isInGame else { return }
+
         let serializedDeltas = modifiedBlocks.map { (coord, rawVal) in
             SavedBlockDelta(
                 x: coord.x,
@@ -5624,50 +5655,54 @@ final class VoxelWorld: NSObject, ObservableObject {
             )
         }
 
-        let chunkSize = 250
-        if serializedDeltas.isEmpty {
-            let packet = MultiplayerPacket(
-                kind: .worldSnapshot,
-                senderName: localPlayerName,
-                skinRaw: selectedSkin.rawValue,
-                customSkin: activeCustomSkin,
-                worldID: currentWorldID,
-                worldName: currentWorldName,
-                seed: worldSeed,
-                worldTypeRaw: currentWorldType.rawValue,
-                customWorldType: activeCustomWorld,
-                deltas: [],
-                blockDelta: nil,
-                px: playerPosition.x,
-                py: playerPosition.y,
-                pz: playerPosition.z,
-                yaw: yaw,
-                pitch: pitch
-            )
-            sendPacketToPeer(packet, peer: peer, reliable: true)
-        } else {
-            for startIndex in stride(from: 0, to: serializedDeltas.count, by: chunkSize) {
-                let endIndex = min(startIndex + chunkSize, serializedDeltas.count)
-                let chunk = Array(serializedDeltas[startIndex..<endIndex])
-                let packet = MultiplayerPacket(
-                    kind: .worldSnapshot,
-                    senderName: localPlayerName,
-                    skinRaw: selectedSkin.rawValue,
-                    customSkin: activeCustomSkin,
-                    worldID: currentWorldID,
-                    worldName: currentWorldName,
-                    seed: worldSeed,
-                    worldTypeRaw: currentWorldType.rawValue,
-                    customWorldType: activeCustomWorld,
-                    deltas: chunk,
-                    blockDelta: nil,
-                    px: playerPosition.x,
-                    py: playerPosition.y,
-                    pz: playerPosition.z,
-                    yaw: yaw,
-                    pitch: pitch
-                )
-                sendPacketToPeer(packet, peer: peer, reliable: true)
+        let chunkSize = 100
+        let initialDeltas = serializedDeltas.isEmpty ? [] : Array(serializedDeltas.prefix(chunkSize))
+        let initialPacket = MultiplayerPacket(
+            kind: .worldSnapshot,
+            senderName: localPlayerName,
+            skinRaw: selectedSkin.rawValue,
+            customSkin: nil,
+            worldID: currentWorldID,
+            worldName: currentWorldName,
+            seed: worldSeed,
+            worldTypeRaw: currentWorldType.rawValue,
+            customWorldType: activeCustomWorld,
+            deltas: initialDeltas,
+            blockDelta: nil,
+            px: playerPosition.x,
+            py: playerPosition.y,
+            pz: playerPosition.z,
+            yaw: yaw,
+            pitch: pitch
+        )
+        sendPacketToPeer(initialPacket, peer: peer, reliable: true)
+
+        if serializedDeltas.count > chunkSize {
+            Task { @MainActor in
+                for startIndex in stride(from: chunkSize, to: serializedDeltas.count, by: chunkSize) {
+                    try? await Task.sleep(nanoseconds: 40_000_000)
+                    let endIndex = min(startIndex + chunkSize, serializedDeltas.count)
+                    let chunk = Array(serializedDeltas[startIndex..<endIndex])
+                    let deltaPacket = MultiplayerPacket(
+                        kind: .worldSnapshot,
+                        senderName: self.localPlayerName,
+                        skinRaw: self.selectedSkin.rawValue,
+                        customSkin: nil,
+                        worldID: self.currentWorldID,
+                        worldName: self.currentWorldName,
+                        seed: self.worldSeed,
+                        worldTypeRaw: self.currentWorldType.rawValue,
+                        customWorldType: self.activeCustomWorld,
+                        deltas: chunk,
+                        blockDelta: nil,
+                        px: self.playerPosition.x,
+                        py: self.playerPosition.y,
+                        pz: self.playerPosition.z,
+                        yaw: self.yaw,
+                        pitch: self.pitch
+                    )
+                    self.sendPacketToPeer(deltaPacket, peer: peer, reliable: true)
+                }
             }
         }
     }
@@ -5701,7 +5736,7 @@ final class VoxelWorld: NSObject, ObservableObject {
             kind: .playerPose,
             senderName: localPlayerName,
             skinRaw: selectedSkin.rawValue,
-            customSkin: activeCustomSkin,
+            customSkin: nil,
             worldID: currentWorldID,
             worldName: nil,
             seed: nil,
@@ -5721,7 +5756,7 @@ final class VoxelWorld: NSObject, ObservableObject {
     private func handleReceivedPacket(_ packet: MultiplayerPacket, from peer: MCPeerID) {
         switch packet.kind {
         case .requestSnapshot:
-            if isHostingMultiplayer {
+            if isInGame {
                 sendWorldSnapshot(to: peer)
             }
 
@@ -5794,14 +5829,22 @@ final class VoxelWorld: NSObject, ObservableObject {
 
             if let hx = packet.px, let hy = packet.py, let hz = packet.pz {
                 playerPosition = SCNVector3(hx + 1.2, hy + 0.5, hz + 1.2)
+            } else if let custom = activeCustomWorld, custom.hasWaterfalls {
+                playerPosition = SCNVector3(3.5, 7.8, 4.0)
+            } else if let custom = activeCustomWorld, custom.hasVillages {
+                playerPosition = SCNVector3(5.0, 7.8, 2.5)
+            } else {
+                playerPosition = SCNVector3(0, 10.5, 0)
             }
+            lastPlayerChunk = nil
             updateStreamedChunks(force: true)
             resolveStuckPositionIfNeeded()
             updateCameraTransform()
             isInGame = true
+            isHostingMultiplayer = false
             saveCurrentWorld(silent: true)
             if let custom = packet.customWorldType {
-                statusToast = "Joined & downloaded world type '\(custom.name)'!"
+                statusToast = "Joined '\(currentWorldName)' (\(custom.name))!"
             } else {
                 statusToast = "Joined '\(currentWorldName)' with \(peer.displayName)!"
             }
@@ -6335,30 +6378,39 @@ extension VoxelWorld: MCSessionDelegate, MCNearbyServiceAdvertiserDelegate, MCNe
             self.connectedPlayerNames = session.connectedPeers.map { $0.displayName }
             if state == .connected {
                 self.statusToast = "\(peerID.displayName) connected!"
+                // Dismiss any pending join prompt for this peer immediately
+                if self.activeJoinPrompt?.peerID == peerID {
+                    self.activeJoinPrompt = nil
+                }
                 if self.isHostingMultiplayer {
                     // Send world snapshot to the joined peer after small delay to let handshake finalize
                     Task { @MainActor in
-                        try? await Task.sleep(nanoseconds: 250_000_000)
+                        try? await Task.sleep(nanoseconds: 200_000_000)
                         self.sendWorldSnapshot(to: peerID)
                     }
                 } else {
-                    // Guest requests snapshot after 350ms if not already received
+                    // Send initial handshake with our skin and pose
+                    let handshake = MultiplayerPacket(
+                        kind: .playerPose,
+                        senderName: self.localPlayerName,
+                        skinRaw: self.selectedSkin.rawValue,
+                        customSkin: self.activeCustomSkin,
+                        worldID: self.currentWorldID,
+                        px: self.playerPosition.x,
+                        py: self.playerPosition.y,
+                        pz: self.playerPosition.z,
+                        yaw: self.yaw,
+                        pitch: self.pitch
+                    )
+                    self.sendPacketToPeer(handshake, peer: peerID, reliable: true)
+
+                    // Guest also schedules a requestSnapshot fallback
                     Task { @MainActor in
-                        try? await Task.sleep(nanoseconds: 350_000_000)
+                        try? await Task.sleep(nanoseconds: 500_000_000)
                         let req = MultiplayerPacket(
                             kind: .requestSnapshot,
                             senderName: self.localPlayerName,
-                            skinRaw: self.selectedSkin.rawValue,
-                            worldID: nil,
-                            worldName: nil,
-                            seed: nil,
-                            deltas: nil,
-                            blockDelta: nil,
-                            px: nil,
-                            py: nil,
-                            pz: nil,
-                            yaw: nil,
-                            pitch: nil
+                            skinRaw: self.selectedSkin.rawValue
                         )
                         self.sendPacketToPeer(req, peer: peerID, reliable: true)
                     }
@@ -6377,18 +6429,7 @@ extension VoxelWorld: MCSessionDelegate, MCNearbyServiceAdvertiserDelegate, MCNe
                 if self.isHostingMultiplayer {
                     let leftPacket = MultiplayerPacket(
                         kind: .playerLeft,
-                        senderName: leftName,
-                        skinRaw: nil,
-                        worldID: nil,
-                        worldName: nil,
-                        seed: nil,
-                        deltas: nil,
-                        blockDelta: nil,
-                        px: nil,
-                        py: nil,
-                        pz: nil,
-                        yaw: nil,
-                        pitch: nil
+                        senderName: leftName
                     )
                     self.sendPacket(leftPacket, reliable: true)
                 }
@@ -6397,9 +6438,13 @@ extension VoxelWorld: MCSessionDelegate, MCNearbyServiceAdvertiserDelegate, MCNe
     }
 
     nonisolated func session(_ session: MCSession, didReceive data: Data, fromPeer peerID: MCPeerID) {
-        guard let packet = try? JSONDecoder().decode(MultiplayerPacket.self, from: data) else { return }
-        Task { @MainActor in
-            self.handleReceivedPacket(packet, from: peerID)
+        do {
+            let packet = try JSONDecoder().decode(MultiplayerPacket.self, from: data)
+            Task { @MainActor in
+                self.handleReceivedPacket(packet, from: peerID)
+            }
+        } catch {
+            print("[Multiplayer] JSON decode error from \(peerID.displayName): \(error.localizedDescription)")
         }
     }
 
@@ -6419,9 +6464,10 @@ extension VoxelWorld: MCSessionDelegate, MCNearbyServiceAdvertiserDelegate, MCNe
                 return
             }
 
-            // If we are currently in a world and hosting, auto-accept guest connections
+            // If we are currently in a world and hosting, auto-accept guest connections with zero annoying prompts
             if self.isHostingMultiplayer {
-                self.statusToast = "\(peerID.displayName) connected to your world!"
+                self.activeJoinPrompt = nil
+                self.statusToast = "\(peerID.displayName) connecting to your world..."
                 invitationHandler(true, self.mcSession)
             } else {
                 // Otherwise present the pop-up invitation asking if user would like to join
@@ -6449,6 +6495,7 @@ extension VoxelWorld: MCSessionDelegate, MCNearbyServiceAdvertiserDelegate, MCNe
         let pName = info?["playerName"] ?? peerID.displayName
         let skin = info?["skin"].flatMap { PlayerSkin(rawValue: $0) } ?? .steve
         let inGame = (info?["isInGame"] == "1")
+        let isHost = (info?["isHost"] == "1")
 
         Task { @MainActor in
             guard self.isMultiplayerEnabled else { return }
@@ -6458,7 +6505,8 @@ extension VoxelWorld: MCSessionDelegate, MCNearbyServiceAdvertiserDelegate, MCNe
                 worldName: wName,
                 playerName: pName,
                 skin: skin,
-                isInGame: inGame
+                isInGame: inGame,
+                isHost: isHost
             )
             if let idx = self.discoveredHosts.firstIndex(where: { $0.id == host.id }) {
                 self.discoveredHosts[idx] = host

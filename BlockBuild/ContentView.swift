@@ -995,15 +995,15 @@ struct LocalMultiplayerSheet: View {
                                         Text("By \(host.playerName)")
                                             .font(.system(size: 9.5, design: .monospaced))
                                             .foregroundColor(.white.opacity(0.7))
-                                        Text(host.isInGame ? "• IN GAME" : "• IN MENU")
+                                        Text(host.isInGame ? (host.isHost ? "• HOST" : "• IN GAME") : "• IN MENU")
                                             .font(.system(size: 8.5, weight: .heavy, design: .monospaced))
-                                            .foregroundColor(host.isInGame ? .green : .blue)
+                                            .foregroundColor(host.isInGame ? (host.isHost ? .green : .yellow) : .blue)
                                     }
                                 }
 
                                 Spacer()
 
-                                if host.isInGame {
+                                if host.isInGame && host.isHost {
                                     GameSmallButton(title: "Join", icon: "arrow.right.circle.fill", color: .green, isProminent: true) {
                                         world.joinDiscoveredHost(host)
                                         dismiss()
@@ -1439,93 +1439,144 @@ struct MainMenuView: View {
                 )
                 .ignoresSafeArea()
 
-                let isLandscape = geo.size.width >= 540
-                let isCompactHeight = geo.size.height < 420
+                let safeInsets = geo.safeAreaInsets
+                let safeWidth = max(200.0, geo.size.width - safeInsets.leading - safeInsets.trailing)
+                let safeHeight = max(200.0, geo.size.height - safeInsets.top - safeInsets.bottom)
+                let aspectRatio = geo.size.width / max(1.0, geo.size.height)
+                let isWide = aspectRatio >= 1.20
+
+                // Adaptive padding inset to guarantee content never interferes with display edges, notches, or home bars
+                let hMargin = max(8.0, min(24.0, safeWidth * 0.03))
+                let vMargin = max(6.0, min(16.0, safeHeight * 0.025))
+                let usableWidth = max(180.0, safeWidth - hMargin * 2)
+                let usableHeight = max(180.0, safeHeight - vMargin * 2)
+
+                // Dynamic scale factor derived directly from resolution and safe bounds
+                let scale: CGFloat = isWide
+                    ? min(1.15, max(0.60, min(usableWidth / 680.0, usableHeight / 350.0)))
+                    : min(1.15, max(0.65, min(usableWidth / 375.0, usableHeight / 660.0)))
 
                 ViewThatFits(in: .vertical) {
-                    // 1. Primary layout (fits cleanly on all iPhones & iPads without scrolling)
-                    menuLayout(geo: geo, isLandscape: isLandscape, isCompactHeight: isCompactHeight, theme: theme)
+                    // 1. Primary resolution & aspect-ratio optimized layout
+                    menuContent(
+                        isWide: isWide,
+                        usableWidth: usableWidth,
+                        usableHeight: usableHeight,
+                        scale: scale,
+                        theme: theme
+                    )
 
-                    // 2. Fallback scrollable layout if extreme accessibility Dynamic Type or micro-window
+                    // 2. Fallback scrollable layout if extreme accessibility Dynamic Type or ultra-compact display
                     ScrollView(.vertical, showsIndicators: false) {
-                        menuLayout(geo: geo, isLandscape: isLandscape, isCompactHeight: isCompactHeight, theme: theme)
-                            .frame(minHeight: geo.size.height)
+                        menuContent(
+                            isWide: isWide,
+                            usableWidth: usableWidth,
+                            usableHeight: usableHeight,
+                            scale: scale,
+                            theme: theme
+                        )
+                        .frame(minHeight: usableHeight)
                     }
                 }
+                .padding(.leading, safeInsets.leading + hMargin)
+                .padding(.trailing, safeInsets.trailing + hMargin)
+                .padding(.top, safeInsets.top + vMargin)
+                .padding(.bottom, safeInsets.bottom + vMargin)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
     }
 
     @ViewBuilder
-    private func menuLayout(geo: GeometryProxy, isLandscape: Bool, isCompactHeight: Bool, theme: MenuTheme) -> some View {
-        if isLandscape {
-            landscapeLayout(geo: geo, isCompactHeight: isCompactHeight, theme: theme)
+    private func menuContent(
+        isWide: Bool,
+        usableWidth: CGFloat,
+        usableHeight: CGFloat,
+        scale: CGFloat,
+        theme: MenuTheme
+    ) -> some View {
+        if isWide {
+            landscapeLayout(usableWidth: usableWidth, usableHeight: usableHeight, scale: scale, theme: theme)
         } else {
-            portraitLayout(geo: geo, isCompactHeight: isCompactHeight, theme: theme)
+            portraitLayout(usableWidth: usableWidth, usableHeight: usableHeight, scale: scale, theme: theme)
         }
     }
 
-    private func landscapeLayout(geo: GeometryProxy, isCompactHeight: Bool, theme: MenuTheme) -> some View {
-        HStack(alignment: .center, spacing: max(20, geo.size.width * 0.05)) {
+    private func landscapeLayout(
+        usableWidth: CGFloat,
+        usableHeight: CGFloat,
+        scale: CGFloat,
+        theme: MenuTheme
+    ) -> some View {
+        let colSpacing = max(10.0, min(24.0, usableWidth * 0.04))
+        let availableForCols = usableWidth - colSpacing
+        let leftColWidth = min(320.0 * scale, availableForCols * 0.46)
+        let rightColWidth = min(360.0 * scale, availableForCols * 0.52)
+        let verticalSpacing = max(6.0, 10.0 * scale)
+
+        return HStack(alignment: .center, spacing: colSpacing) {
             // Left Column: Logo Title, Equipped Skin Pill, Feature Tags
-            VStack(alignment: .leading, spacing: isCompactHeight ? 10 : 14) {
-                Spacer()
+            VStack(alignment: .leading, spacing: verticalSpacing) {
+                Spacer(minLength: 2)
 
                 // Retro Themed Title Banner
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: max(2, 3 * scale)) {
                     Text("BLOCKBUILD")
-                        .font(.system(size: isCompactHeight ? 32 : 38, weight: .black, design: .monospaced))
+                        .font(.system(size: max(22, 36 * scale), weight: .black, design: .monospaced))
                         .foregroundStyle(theme.headerGradient)
                         .shadow(color: .black, radius: 4, x: 2, y: 3)
-                        .minimumScaleFactor(0.75)
+                        .minimumScaleFactor(0.65)
                         .lineLimit(1)
 
-                    HStack(spacing: 6) {
+                    HStack(spacing: max(3, 5 * scale)) {
                         Text("A RETRO VOXEL SANDBOX")
-                            .font(.system(size: isCompactHeight ? 9.5 : 11, weight: .black, design: .monospaced))
+                            .font(.system(size: max(7.5, 10.0 * scale), weight: .black, design: .monospaced))
                             .foregroundColor(theme.secondaryAccent)
-                            .tracking(2.5)
+                            .tracking(max(1.0, 2.0 * scale))
                             .shadow(color: .black, radius: 2)
+                            .minimumScaleFactor(0.70)
                             .lineLimit(1)
 
                         Text("•")
                             .foregroundColor(.white.opacity(0.4))
+                            .font(.system(size: max(7.5, 9.0 * scale)))
 
                         Text(theme.displayName.uppercased())
-                            .font(.system(size: isCompactHeight ? 8.5 : 9.5, weight: .black, design: .monospaced))
+                            .font(.system(size: max(7.0, 8.5 * scale), weight: .black, design: .monospaced))
                             .foregroundColor(theme.primaryAccent)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 1.5)
+                            .padding(.horizontal, max(3, 5 * scale))
+                            .padding(.vertical, max(1, 1.5 * scale))
                             .background(theme.primaryAccent.opacity(0.18))
-                            .cornerRadius(4)
+                            .cornerRadius(3)
+                            .lineLimit(1)
                     }
                 }
 
                 // Equipped Skin Preview Pill
-                skinPreviewPill(compact: isCompactHeight, theme: theme)
+                skinPreviewPill(scale: scale, theme: theme)
 
                 // Feature Highlights
-                VStack(alignment: .leading, spacing: 5) {
-                    featureBadge(icon: "cube.fill", text: "Infinite Voxel Worlds", color: theme.primaryAccent)
-                    featureBadge(icon: "paintpalette.fill", text: "Skin & Texture Pixel Studio", color: theme.secondaryAccent)
-                    featureBadge(icon: "person.2.fill", text: "Nearby Co-Op & World Sync", color: .pink)
+                VStack(alignment: .leading, spacing: max(3, 5 * scale)) {
+                    featureBadge(icon: "cube.fill", text: "Infinite Voxel Worlds", color: theme.primaryAccent, scale: scale)
+                    featureBadge(icon: "paintpalette.fill", text: "Skin & Texture Pixel Studio", color: theme.secondaryAccent, scale: scale)
+                    featureBadge(icon: "person.2.fill", text: "Nearby Co-Op & World Sync", color: .pink, scale: scale)
                 }
-                .padding(.top, 4)
+                .padding(.top, max(1, 3 * scale))
 
-                Spacer()
+                Spacer(minLength: 2)
             }
-            .frame(maxWidth: min(340, geo.size.width * 0.44), alignment: .leading)
+            .frame(width: leftColWidth, alignment: .leading)
 
             // Right Column: Action Buttons
-            VStack(spacing: isCompactHeight ? 7.5 : 10) {
-                Spacer()
+            VStack(spacing: max(5.0, 8.5 * scale)) {
+                Spacer(minLength: 2)
 
                 MainMenuButton(
                     title: "PLAY WORLDS",
                     subtitle: "Create, Load & AI Biomes",
                     icon: "globe.americas.fill",
                     color: theme.primaryAccent,
-                    compact: isCompactHeight
+                    scale: scale
                 ) {
                     showingWorldsSheet = true
                 }
@@ -1535,7 +1586,7 @@ struct MainMenuView: View {
                     subtitle: "Modify PNG & Inspect 3D Model",
                     icon: "paintpalette.fill",
                     color: theme.secondaryAccent,
-                    compact: isCompactHeight
+                    scale: scale
                 ) {
                     showingSkinMakerSheet = true
                 }
@@ -1545,7 +1596,7 @@ struct MainMenuView: View {
                     subtitle: world.connectedPlayerNames.isEmpty ? "Local Wi-Fi Co-Op" : "\(world.connectedPlayerNames.count) Connected",
                     icon: "person.2.wave.2.fill",
                     color: .pink,
-                    compact: isCompactHeight
+                    scale: scale
                 ) {
                     showingMultiplayerSheet = true
                 }
@@ -1555,109 +1606,136 @@ struct MainMenuView: View {
                     subtitle: "Themes (\(theme.displayName)), Textures & Options",
                     icon: "gearshape.fill",
                     color: Color(red: 0.35, green: 0.38, blue: 0.48),
-                    compact: isCompactHeight
+                    scale: scale
                 ) {
                     showingSettingsSheet = true
                 }
 
-                Spacer()
+                Spacer(minLength: 2)
             }
-            .frame(maxWidth: min(360, geo.size.width * 0.48))
+            .frame(width: rightColWidth)
         }
-        .padding(.leading, max(24, geo.safeAreaInsets.leading + 10))
-        .padding(.trailing, max(24, geo.safeAreaInsets.trailing + 10))
-        .padding(.top, max(8, geo.safeAreaInsets.top))
-        .padding(.bottom, max(8, geo.safeAreaInsets.bottom))
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: usableWidth, maxHeight: usableHeight)
     }
 
-    private func portraitLayout(geo: GeometryProxy, isCompactHeight: Bool, theme: MenuTheme) -> some View {
-        VStack(spacing: 12) {
-            Spacer()
+    private func portraitLayout(
+        usableWidth: CGFloat,
+        usableHeight: CGFloat,
+        scale: CGFloat,
+        theme: MenuTheme
+    ) -> some View {
+        let contentWidth = min(360.0 * scale, usableWidth * 0.94)
+        let spacing = max(6.0, 9.5 * scale)
+
+        return VStack(spacing: spacing) {
+            Spacer(minLength: 4)
 
             // Retro Themed Title Banner
-            VStack(spacing: 4) {
+            VStack(spacing: max(2, 3.5 * scale)) {
                 Text("BLOCKBUILD")
-                    .font(.system(size: 34, weight: .black, design: .monospaced))
+                    .font(.system(size: max(22, 34 * scale), weight: .black, design: .monospaced))
                     .foregroundStyle(theme.headerGradient)
                     .shadow(color: .black, radius: 4, x: 2, y: 3)
-                    .minimumScaleFactor(0.7)
+                    .minimumScaleFactor(0.65)
                     .lineLimit(1)
 
-                Text("A RETRO VOXEL SANDBOX")
-                    .font(.system(size: 10.5, weight: .black, design: .monospaced))
-                    .foregroundColor(theme.secondaryAccent)
-                    .tracking(2.5)
-                    .shadow(color: .black, radius: 2)
+                HStack(spacing: max(3, 5 * scale)) {
+                    Text("A RETRO VOXEL SANDBOX")
+                        .font(.system(size: max(8, 10.5 * scale), weight: .black, design: .monospaced))
+                        .foregroundColor(theme.secondaryAccent)
+                        .tracking(max(1.0, 2.0 * scale))
+                        .shadow(color: .black, radius: 2)
+                        .minimumScaleFactor(0.70)
+                        .lineLimit(1)
+
+                    Text("•")
+                        .foregroundColor(.white.opacity(0.4))
+                        .font(.system(size: max(8, 9.5 * scale)))
+
+                    Text(theme.displayName.uppercased())
+                        .font(.system(size: max(7.5, 9.0 * scale), weight: .black, design: .monospaced))
+                        .foregroundColor(theme.primaryAccent)
+                        .padding(.horizontal, max(3, 5 * scale))
+                        .padding(.vertical, max(1, 1.5 * scale))
+                        .background(theme.primaryAccent.opacity(0.18))
+                        .cornerRadius(3)
+                        .lineLimit(1)
+                }
             }
 
-            skinPreviewPill(compact: false, theme: theme)
+            skinPreviewPill(scale: scale, theme: theme)
 
-            Spacer()
+            Spacer(minLength: 4)
 
-            VStack(spacing: 9) {
-                MainMenuButton(title: "PLAY WORLDS", subtitle: "Create, Load & AI Biomes", icon: "globe.americas.fill", color: theme.primaryAccent) {
+            VStack(spacing: max(5.5, 8.5 * scale)) {
+                MainMenuButton(title: "PLAY WORLDS", subtitle: "Create, Load & AI Biomes", icon: "globe.americas.fill", color: theme.primaryAccent, scale: scale) {
                     showingWorldsSheet = true
                 }
-                MainMenuButton(title: "SKIN & TEXTURE MAKER", subtitle: "Modify PNG & Inspect 3D Model", icon: "paintpalette.fill", color: theme.secondaryAccent) {
+                MainMenuButton(title: "SKIN & TEXTURE MAKER", subtitle: "Modify PNG & Inspect 3D Model", icon: "paintpalette.fill", color: theme.secondaryAccent, scale: scale) {
                     showingSkinMakerSheet = true
                 }
-                MainMenuButton(title: "MULTIPLAYER", subtitle: world.connectedPlayerNames.isEmpty ? "Local Wi-Fi Co-Op" : "\(world.connectedPlayerNames.count) Connected", icon: "person.2.wave.2.fill", color: .pink) {
+                MainMenuButton(title: "MULTIPLAYER", subtitle: world.connectedPlayerNames.isEmpty ? "Local Wi-Fi Co-Op" : "\(world.connectedPlayerNames.count) Connected", icon: "person.2.wave.2.fill", color: .pink, scale: scale) {
                     showingMultiplayerSheet = true
                 }
-                MainMenuButton(title: "SETTINGS", subtitle: "Themes (\(theme.displayName)), Textures & Options", icon: "gearshape.fill", color: Color(red: 0.35, green: 0.38, blue: 0.48)) {
+                MainMenuButton(title: "SETTINGS", subtitle: "Themes (\(theme.displayName)), Textures & Options", icon: "gearshape.fill", color: Color(red: 0.35, green: 0.38, blue: 0.48), scale: scale) {
                     showingSettingsSheet = true
                 }
             }
-            .frame(maxWidth: 380)
+            .frame(maxWidth: contentWidth)
 
-            Spacer()
+            Spacer(minLength: 4)
 
             // Footer
-            HStack(spacing: 8) {
+            HStack(spacing: max(4, 7 * scale)) {
                 Text("Infinite Worlds")
                 Text("•")
                 Text("Skin Maker")
                 Text("•")
                 Text("Local Co-Op")
             }
-            .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+            .font(.system(size: max(7.5, 9.5 * scale), weight: .bold, design: .monospaced))
             .foregroundColor(.white.opacity(0.6))
-            .padding(.bottom, 6)
+            .minimumScaleFactor(0.70)
+            .lineLimit(1)
+            .padding(.bottom, max(2, 4 * scale))
         }
-        .padding(.horizontal, 20)
-        .padding(.top, max(10, geo.safeAreaInsets.top))
-        .padding(.bottom, max(10, geo.safeAreaInsets.bottom))
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: usableWidth, maxHeight: usableHeight)
     }
 
-    private func skinPreviewPill(compact: Bool, theme: MenuTheme) -> some View {
-        Button {
+    private func skinPreviewPill(scale: CGFloat, theme: MenuTheme) -> some View {
+        let avatarSize = max(18.0, 24.0 * scale)
+        let textSize = max(8.5, 10.0 * scale)
+        let subtextSize = max(7.0, 8.5 * scale)
+        let hPad = max(8.0, 11.0 * scale)
+        let vPad = max(3.5, 5.5 * scale)
+
+        return Button {
             showingSkinsSheet = true
         } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: max(5, 7 * scale)) {
                 if let custom = world.activeCustomSkin {
-                    CharacterAvatarPreview(customSkin: custom, size: compact ? 22 : 26)
+                    CharacterAvatarPreview(customSkin: custom, size: avatarSize)
                 } else {
-                    CharacterAvatarPreview(skin: world.selectedSkin, size: compact ? 22 : 26)
+                    CharacterAvatarPreview(skin: world.selectedSkin, size: avatarSize)
                 }
                 VStack(alignment: .leading, spacing: 1) {
                     Text("SKIN: \((world.activeCustomSkin?.name ?? world.selectedSkin.displayName).uppercased())")
-                        .font(.system(size: compact ? 9.5 : 10.5, weight: .bold, design: .monospaced))
+                        .font(.system(size: textSize, weight: .bold, design: .monospaced))
                         .foregroundColor(.white)
+                        .minimumScaleFactor(0.75)
                         .lineLimit(1)
                     Text("Tap to change skin")
-                        .font(.system(size: 8.5, weight: .medium, design: .monospaced))
+                        .font(.system(size: subtextSize, weight: .medium, design: .monospaced))
                         .foregroundColor(theme.primaryAccent)
                 }
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.system(size: max(7.5, 9.0 * scale), weight: .bold))
                     .foregroundColor(.white.opacity(0.7))
             }
-            .padding(.horizontal, compact ? 10 : 12)
-            .padding(.vertical, compact ? 5 : 6)
+            .padding(.horizontal, hPad)
+            .padding(.vertical, vPad)
             .background(theme.cardBackground)
-            .cornerRadius(18)
+            .cornerRadius(max(12, 16 * scale))
             .overlay(
                 Capsule().stroke(theme.cardBorder, lineWidth: 1.2)
             )
@@ -1665,15 +1743,17 @@ struct MainMenuView: View {
         }
     }
 
-    private func featureBadge(icon: String, text: String, color: Color) -> some View {
-        HStack(spacing: 6) {
+    private func featureBadge(icon: String, text: String, color: Color, scale: CGFloat) -> some View {
+        HStack(spacing: max(4, 6 * scale)) {
             Image(systemName: icon)
-                .font(.system(size: 9, weight: .bold))
+                .font(.system(size: max(7.5, 9.0 * scale), weight: .bold))
                 .foregroundColor(color)
-                .frame(width: 14)
+                .frame(width: max(11, 14 * scale))
             Text(text)
-                .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                .font(.system(size: max(7.5, 9.2 * scale), weight: .bold, design: .monospaced))
                 .foregroundColor(.white.opacity(0.75))
+                .minimumScaleFactor(0.70)
+                .lineLimit(1)
         }
     }
 }
@@ -1683,6 +1763,7 @@ struct MainMenuButton: View {
     let subtitle: String?
     let icon: String
     let color: Color
+    var scale: CGFloat = 1.0
     var compact: Bool = false
     let action: () -> Void
 
@@ -1690,40 +1771,52 @@ struct MainMenuButton: View {
 
     var body: some View {
         let theme = themeMgr.currentTheme
+        let effectiveScale = compact ? min(scale, 0.85) : scale
+        let iconBoxSize = max(22.0, 29.0 * effectiveScale)
+        let iconSize = max(11.0, 15.0 * effectiveScale)
+        let titleSize = max(10.5, 12.5 * effectiveScale)
+        let subtitleSize = max(7.5, 9.0 * effectiveScale)
+        let arrowSize = max(9.0, 12.0 * effectiveScale)
+        let hPadding = max(8.0, 13.0 * effectiveScale)
+        let vPadding = max(5.0, 8.5 * effectiveScale)
+        let cornerRad = max(7.0, 10.5 * effectiveScale)
+        let spacing = max(7.0, 11.0 * effectiveScale)
 
         Button(action: action) {
-            HStack(spacing: compact ? 10 : 12) {
+            HStack(spacing: spacing) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 7)
+                    RoundedRectangle(cornerRadius: max(5, 7 * effectiveScale))
                         .fill(color.opacity(0.28))
-                        .frame(width: compact ? 26 : 30, height: compact ? 26 : 30)
+                        .frame(width: iconBoxSize, height: iconBoxSize)
                     Image(systemName: icon)
-                        .font(.system(size: compact ? 14 : 16, weight: .bold))
+                        .font(.system(size: iconSize, weight: .bold))
                         .foregroundColor(.white)
                 }
 
-                VStack(alignment: .leading, spacing: 1.5) {
+                VStack(alignment: .leading, spacing: 1.5 * effectiveScale) {
                     Text(title)
-                        .font(.system(size: compact ? 12 : 13, weight: .black, design: .monospaced))
+                        .font(.system(size: titleSize, weight: .black, design: .monospaced))
                         .foregroundColor(.white)
+                        .minimumScaleFactor(0.70)
                         .lineLimit(1)
 
                     if let sub = subtitle {
                         Text(sub)
-                            .font(.system(size: compact ? 8.5 : 9, weight: .medium, design: .monospaced))
+                            .font(.system(size: subtitleSize, weight: .medium, design: .monospaced))
                             .foregroundColor(.white.opacity(0.82))
+                            .minimumScaleFactor(0.65)
                             .lineLimit(1)
                     }
                 }
 
-                Spacer()
+                Spacer(minLength: 4)
 
                 Image(systemName: "arrow.right.circle.fill")
-                    .font(.system(size: compact ? 11 : 13, weight: .bold))
+                    .font(.system(size: arrowSize, weight: .bold))
                     .foregroundColor(.white.opacity(0.75))
             }
-            .padding(.horizontal, compact ? 12 : 14)
-            .padding(.vertical, compact ? 7.5 : 9.5)
+            .padding(.horizontal, hPadding)
+            .padding(.vertical, vPadding)
             .background(
                 LinearGradient(
                     colors: [color.opacity(0.90), theme.buttonBackground.opacity(0.85)],
@@ -1731,12 +1824,12 @@ struct MainMenuButton: View {
                     endPoint: .bottomTrailing
                 )
             )
-            .cornerRadius(11)
+            .cornerRadius(cornerRad)
             .overlay(
-                RoundedRectangle(cornerRadius: 11)
-                    .stroke(theme.cardBorder, lineWidth: 1.5)
+                RoundedRectangle(cornerRadius: cornerRad)
+                    .stroke(theme.cardBorder, lineWidth: 1.2)
             )
-            .shadow(color: .black.opacity(0.4), radius: 3, y: 1.5)
+            .shadow(color: .black.opacity(0.35), radius: 3, y: 1.5)
         }
     }
 }
