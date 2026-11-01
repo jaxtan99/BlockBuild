@@ -795,12 +795,14 @@ struct MultiplayerPacket: Codable {
         case blockUpdate
         case playerPose
         case playerLeft
+        case skinUpdate
     }
 
     var kind: Kind
     var senderName: String
     var skinRaw: String? = nil
     var customSkin: CustomSkin? = nil
+    var customSkinID: UUID? = nil
     // World Snapshot fields
     var worldID: UUID? = nil
     var worldName: String? = nil
@@ -1714,6 +1716,7 @@ final class VoxelWorld: NSObject, ObservableObject {
         UserDefaults.standard.set(skin.rawValue, forKey: "blockbuild_selected_skin")
         UserDefaults.standard.removeObject(forKey: "blockbuild_active_custom_skin_id")
         refreshLocalPlayerAvatarNode()
+        broadcastPlayerSkinUpdate()
         broadcastPlayerPoseIfNeeded()
         if isInGame {
             startMultiplayerServices()
@@ -1773,6 +1776,12 @@ final class VoxelWorld: NSObject, ObservableObject {
             customSkins.insert(skin, at: 0)
         }
         persistCustomSkins()
+        if activeCustomSkin?.id == skin.id {
+            activeCustomSkin = skin
+            SkinTextureManager.shared.clearCustomSkinCache(for: skin.id)
+            refreshLocalPlayerAvatarNode()
+            broadcastPlayerSkinUpdate()
+        }
         statusToast = "Saved skin '\(skin.name)'"
     }
 
@@ -1781,6 +1790,8 @@ final class VoxelWorld: NSObject, ObservableObject {
         if activeCustomSkin?.id == id {
             activeCustomSkin = nil
             UserDefaults.standard.removeObject(forKey: "blockbuild_active_custom_skin_id")
+            refreshLocalPlayerAvatarNode()
+            broadcastPlayerSkinUpdate()
         }
         persistCustomSkins()
     }
@@ -1788,8 +1799,13 @@ final class VoxelWorld: NSObject, ObservableObject {
     func equipCustomSkin(_ skin: CustomSkin) {
         activeCustomSkin = skin
         UserDefaults.standard.set(skin.id.uuidString, forKey: "blockbuild_active_custom_skin_id")
+        SkinTextureManager.shared.clearCustomSkinCache(for: skin.id)
         refreshLocalPlayerAvatarNode()
+        broadcastPlayerSkinUpdate()
         broadcastPlayerPoseIfNeeded()
+        if isInGame {
+            startMultiplayerServices()
+        }
         statusToast = "Equipped skin '\(skin.name)'"
     }
 
@@ -1797,7 +1813,29 @@ final class VoxelWorld: NSObject, ObservableObject {
         activeCustomSkin = nil
         UserDefaults.standard.removeObject(forKey: "blockbuild_active_custom_skin_id")
         refreshLocalPlayerAvatarNode()
+        broadcastPlayerSkinUpdate()
         broadcastPlayerPoseIfNeeded()
+        if isInGame {
+            startMultiplayerServices()
+        }
+    }
+
+    func broadcastPlayerSkinUpdate() {
+        guard hasAnyConnectedPeers else { return }
+        let packet = MultiplayerPacket(
+            kind: .skinUpdate,
+            senderName: localPlayerName,
+            skinRaw: selectedSkin.rawValue,
+            customSkin: activeCustomSkin,
+            customSkinID: activeCustomSkin?.id,
+            worldID: currentWorldID,
+            px: playerPosition.x,
+            py: playerPosition.y,
+            pz: playerPosition.z,
+            yaw: yaw,
+            pitch: pitch
+        )
+        sendPacket(packet, reliable: true)
     }
 
     private func persistCustomSkins() {
@@ -5947,6 +5985,8 @@ final class VoxelWorld: NSObject, ObservableObject {
                 kind: .worldSnapshot,
                 senderName: self.localPlayerName,
                 skinRaw: self.selectedSkin.rawValue,
+                customSkin: self.activeCustomSkin,
+                customSkinID: self.activeCustomSkin?.id,
                 worldID: self.currentWorldID,
                 worldName: self.currentWorldName,
                 seed: self.worldSeed,
@@ -6033,6 +6073,8 @@ final class VoxelWorld: NSObject, ObservableObject {
             kind: .playerPose,
             senderName: localPlayerName,
             skinRaw: selectedSkin.rawValue,
+            customSkin: activeCustomSkin,
+            customSkinID: activeCustomSkin?.id,
             worldID: currentWorldID,
             px: playerPosition.x,
             py: playerPosition.y,
@@ -6138,7 +6180,8 @@ final class VoxelWorld: NSObject, ObservableObject {
             kind: .worldSnapshot,
             senderName: localPlayerName,
             skinRaw: selectedSkin.rawValue,
-            customSkin: nil,
+            customSkin: activeCustomSkin,
+            customSkinID: activeCustomSkin?.id,
             worldID: currentWorldID,
             worldName: currentWorldName,
             seed: worldSeed,
@@ -6164,7 +6207,8 @@ final class VoxelWorld: NSObject, ObservableObject {
                         kind: .worldSnapshot,
                         senderName: self.localPlayerName,
                         skinRaw: self.selectedSkin.rawValue,
-                        customSkin: nil,
+                        customSkin: self.activeCustomSkin,
+                        customSkinID: self.activeCustomSkin?.id,
                         worldID: self.currentWorldID,
                         worldName: self.currentWorldName,
                         seed: self.worldSeed,
@@ -6212,6 +6256,9 @@ final class VoxelWorld: NSObject, ObservableObject {
         sendPacket(packet, reliable: true)
     }
 
+    private var lastBroadcastCustomSkinID: UUID? = nil
+    private var lastFullSkinBroadcastTimestamp: CFTimeInterval = 0
+
     private func broadcastPlayerPoseIfNeeded() {
         guard hasAnyConnectedPeers else { return }
 
@@ -6226,7 +6273,9 @@ final class VoxelWorld: NSObject, ObservableObject {
         let yawDiff = abs(yaw - lastBroadcastYaw)
         let timeSinceLast = now - lastBroadcastTimestamp
 
-        if distSq < 0.0004 && yawDiff < 0.025 && timeSinceLast < 1.0 {
+        let skinChanged = (lastBroadcastCustomSkinID != activeCustomSkin?.id)
+
+        if !skinChanged && distSq < 0.0004 && yawDiff < 0.025 && timeSinceLast < 1.0 {
             return
         }
 
@@ -6234,11 +6283,19 @@ final class VoxelWorld: NSObject, ObservableObject {
         lastBroadcastYaw = yaw
         lastBroadcastTimestamp = now
 
+        let shouldAttachFullSkin = skinChanged || (activeCustomSkin != nil && (now - lastFullSkinBroadcastTimestamp) > 3.0)
+        let customSkinToSend = shouldAttachFullSkin ? activeCustomSkin : nil
+        if shouldAttachFullSkin {
+            lastBroadcastCustomSkinID = activeCustomSkin?.id
+            lastFullSkinBroadcastTimestamp = now
+        }
+
         let packet = MultiplayerPacket(
             kind: .playerPose,
             senderName: localPlayerName,
             skinRaw: selectedSkin.rawValue,
-            customSkin: nil,
+            customSkin: customSkinToSend,
+            customSkinID: activeCustomSkin?.id,
             worldID: currentWorldID,
             worldName: nil,
             seed: nil,
@@ -6252,7 +6309,7 @@ final class VoxelWorld: NSObject, ObservableObject {
             yaw: yaw,
             pitch: pitch
         )
-        sendPacket(packet, reliable: false)
+        sendPacket(packet, reliable: skinChanged)
     }
 
     private func handleReceivedPacket(_ packet: MultiplayerPacket, from peer: MCPeerID) {
@@ -6300,9 +6357,9 @@ final class VoxelWorld: NSObject, ObservableObject {
             }
 
             if let downloadedCustomSkin = packet.customSkin {
-                if !customSkins.contains(where: { $0.id == downloadedCustomSkin.id }) {
-                    saveCustomSkin(downloadedCustomSkin)
-                }
+                SkinTextureManager.shared.clearCustomSkinCache(for: downloadedCustomSkin.id)
+                saveCustomSkin(downloadedCustomSkin)
+                remotePlayerCustomSkins[peer.displayName] = downloadedCustomSkin
             }
 
             applyAtmosphere()
@@ -6342,6 +6399,22 @@ final class VoxelWorld: NSObject, ObservableObject {
             updateStreamedChunks(force: true)
             resolveStuckPositionIfNeeded()
             updateCameraTransform()
+
+            // Display host's avatar immediately if host pose provided in snapshot
+            if let hx = packet.px, let hy = packet.py, let hz = packet.pz, let hyaw = packet.yaw {
+                let hostSkin = packet.skinRaw.flatMap { PlayerSkin(rawValue: $0) } ?? .steve
+                updateRemotePlayerAvatar(
+                    name: peer.displayName,
+                    skin: hostSkin,
+                    customSkin: packet.customSkin,
+                    x: hx,
+                    y: hy,
+                    z: hz,
+                    yaw: hyaw,
+                    forceRebuildSkin: true
+                )
+            }
+
             isInGame = true
             isHostingMultiplayer = false
             saveCurrentWorld(silent: true)
@@ -6399,23 +6472,55 @@ final class VoxelWorld: NSObject, ObservableObject {
                 }
             }
 
-        case .playerPose:
+        case .playerPose, .skinUpdate:
             guard let px = packet.px, let py = packet.py, let pz = packet.pz,
                   let pYaw = packet.yaw else { return }
             let skin = packet.skinRaw.flatMap { PlayerSkin(rawValue: $0) } ?? .steve
             let sender = packet.senderName.isEmpty ? peer.displayName : packet.senderName
-            if let cSkin = packet.customSkin {
-                if !customSkins.contains(where: { $0.id == cSkin.id }) {
-                    saveCustomSkin(cSkin)
-                }
-            }
-            updateRemotePlayerAvatar(name: sender, skin: skin, customSkin: packet.customSkin, x: px, y: py, z: pz, yaw: pYaw)
 
-            // Multi-device relay: Host relays player pose to other connected peers
+            // 1. If full custom skin data is attached, save it and clear texture cache
+            if let cSkin = packet.customSkin {
+                SkinTextureManager.shared.clearCustomSkinCache(for: cSkin.id)
+                saveCustomSkin(cSkin)
+                remotePlayerCustomSkins[sender] = cSkin
+            }
+
+            // 2. Resolve the active custom skin for this sender:
+            let resolvedCustomSkin: CustomSkin?
+            if let direct = packet.customSkin {
+                resolvedCustomSkin = direct
+            } else if let cID = packet.customSkinID {
+                if let existing = remotePlayerCustomSkins[sender], existing.id == cID {
+                    resolvedCustomSkin = existing
+                } else if let saved = customSkins.first(where: { $0.id == cID }) {
+                    remotePlayerCustomSkins[sender] = saved
+                    resolvedCustomSkin = saved
+                } else {
+                    resolvedCustomSkin = remotePlayerCustomSkins[sender]
+                }
+            } else {
+                // Both customSkin and customSkinID are nil -> player has chosen a built-in skin
+                remotePlayerCustomSkins.removeValue(forKey: sender)
+                resolvedCustomSkin = nil
+            }
+
+            let forceRecreate = (packet.kind == .skinUpdate)
+            updateRemotePlayerAvatar(
+                name: sender,
+                skin: skin,
+                customSkin: resolvedCustomSkin,
+                x: px,
+                y: py,
+                z: pz,
+                yaw: pYaw,
+                forceRebuildSkin: forceRecreate
+            )
+
+            // Multi-device relay: Host relays player pose / skin update to other connected peers
             if isHostingMultiplayer {
                 let others = mcSession.connectedPeers.filter { $0 != peer }
                 if !others.isEmpty {
-                    sendPacketToPeers(packet, peers: others, reliable: false, sendToLan: false)
+                    sendPacketToPeers(packet, peers: others, reliable: (packet.kind == .skinUpdate), sendToLan: false)
                 }
                 if !lanConnectedClientFds.isEmpty && !lanConnectedClientFds.values.contains(sender) {
                     if let data = try? JSONEncoder().encode(packet) {
@@ -6440,18 +6545,33 @@ final class VoxelWorld: NSObject, ObservableObject {
         }
     }
 
-    private func updateRemotePlayerAvatar(name: String, skin: PlayerSkin, customSkin: CustomSkin? = nil, x: Float, y: Float, z: Float, yaw: Float) {
+    private func updateRemotePlayerAvatar(
+        name: String,
+        skin: PlayerSkin,
+        customSkin: CustomSkin? = nil,
+        x: Float,
+        y: Float,
+        z: Float,
+        yaw: Float,
+        forceRebuildSkin: Bool = false
+    ) {
         if remotePlayerNodes[name] == nil && !connectedPlayerNames.contains(name) && name != localPlayerName {
             connectedPlayerNames.append(name)
             statusToast = "\(name) connected!"
             postPlayerNotice(name, joined: true)
         }
         let avatarNode: SCNNode
-        let skinUnchanged = (remotePlayerSkins[name] == skin) && (remotePlayerCustomSkins[name]?.id == customSkin?.id)
+        let skinUnchanged = !forceRebuildSkin
+            && (remotePlayerSkins[name] == skin)
+            && (remotePlayerCustomSkins[name] == customSkin)
+
         if let existing = remotePlayerNodes[name], skinUnchanged {
             avatarNode = existing
         } else {
             remotePlayerNodes[name]?.removeFromParentNode()
+            if let custom = customSkin {
+                SkinTextureManager.shared.clearCustomSkinCache(for: custom.id)
+            }
             let created = Self.makeBlockyPlayerAvatarNode(name: name, skin: skin, customSkin: customSkin)
             playersRootNode.addChildNode(created)
             remotePlayerNodes[name] = created
@@ -7004,6 +7124,7 @@ extension VoxelWorld: MCSessionDelegate, MCNearbyServiceAdvertiserDelegate, MCNe
                         senderName: self.localPlayerName,
                         skinRaw: self.selectedSkin.rawValue,
                         customSkin: self.activeCustomSkin,
+                        customSkinID: self.activeCustomSkin?.id,
                         worldID: self.currentWorldID,
                         px: self.playerPosition.x,
                         py: self.playerPosition.y,

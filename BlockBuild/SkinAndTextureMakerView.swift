@@ -355,9 +355,16 @@ struct SkinAndTextureMakerView: View {
         }
         .onAppear {
             if !hasLoadedInitialContent {
-                let skinImage = SkinTextureManager.shared.skinImage(for: selectedSkinPreset)
+                let skinImage: UIImage
+                if let active = world.activeCustomSkin, let img = UIImage(data: active.pngData) {
+                    skinImage = img
+                    customSkinName = active.name
+                    activeSkinID = active.id
+                } else {
+                    skinImage = SkinTextureManager.shared.skinImage(for: selectedSkinPreset)
+                    activeSkinID = UUID()
+                }
                 skinPixels = extractPixelsFromImage(skinImage, width: 64, height: 64)
-                activeSkinID = UUID()
                 updatePreviewCustomSkin()
 
                 let blockImage = BlockType.baseTextureImage(for: selectedBlockType, face: selectedBlockFace, pack: .classic)
@@ -1335,6 +1342,7 @@ struct SkinAndTextureMakerView: View {
     private func saveCustomSkinAction() {
         updatePreviewCustomSkin()
         guard let skin = previewCustomSkin else { return }
+        SkinTextureManager.shared.clearCustomSkinCache(for: skin.id)
         world.saveCustomSkin(skin)
         showToast("Saved skin '\(skin.name)'!")
     }
@@ -1342,6 +1350,7 @@ struct SkinAndTextureMakerView: View {
     private func equipCustomSkinAction() {
         updatePreviewCustomSkin()
         guard let skin = previewCustomSkin else { return }
+        SkinTextureManager.shared.clearCustomSkinCache(for: skin.id)
         world.saveCustomSkin(skin)
         world.equipCustomSkin(skin)
         showToast("Equipped '\(skin.name)'!")
